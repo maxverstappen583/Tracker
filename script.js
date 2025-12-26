@@ -9,7 +9,7 @@ function fmt(ms){
 }
 
 async function update(){
-  const res = await fetch(`https://api.lanyard.rest/v1/users/${userId}`);
+  const res = await fetch(`https://api.lanyard.rest/v1/users/${1319292111325106296}`);
   const { data } = await res.json();
 
   document.getElementById("card").classList.remove("skeleton");
