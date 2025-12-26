@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Discord Live Status</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page">
+    <div class="card skeleton" id="card">
+      <div class="avatar-wrapper">
+        <img id="avatar">
+      </div>
+
+      <h2 id="username">Loading...</h2>
+
+      <div id="status" class="status">LOADING</div>
+      <p id="lastSeen" class="last-seen"></p>
+
+      <div id="spotify" class="spotify hidden">
+        <img id="albumArt">
+        <div class="spotify-info">
+          <p id="song"></p>
+          <p id="artist"></p>
+          <div class="time">
+            <span id="current">0:00</span>
+            <span id="end">0:00</span>
+          </div>
+          <div class="bar">
+            <div id="progress"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
