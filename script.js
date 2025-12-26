@@ -9,47 +9,57 @@ function fmt(ms){
 }
 
 async function update(){
-  const res = await fetch(`https://api.lanyard.rest/v1/users/${1319292111325106296}`);
-  const { data } = await res.json();
+  try{
+    const res = await fetch(`https://api.lanyard.rest/v1/users/${userId}`);
+    if(!res.ok) throw new Error("API error");
 
-  document.getElementById("card").classList.remove("skeleton");
+    const json = await res.json();
+    const data = json.data;
 
-  document.getElementById("username").textContent = data.discord_user.username;
-  document.getElementById("avatar").src =
-    `https://cdn.discordapp.com/avatars/${userId}/${data.discord_user.avatar}.png?size=256`;
+    document.getElementById("card").classList.remove("skeleton");
 
-  const status = data.discord_status;
-  document.getElementById("status").className = `status ${status}`;
-  document.getElementById("status").textContent = status.toUpperCase();
-  document.querySelector(".avatar-wrapper").className = `avatar-wrapper ${status}`;
+    document.getElementById("username").textContent = data.discord_user.username;
+    document.getElementById("avatar").src =
+      `https://cdn.discordapp.com/avatars/${userId}/${data.discord_user.avatar}.png?size=256`;
 
-  if(status !== "offline"){
-    lastOnline = Date.now();
-    document.getElementById("lastSeen").textContent = "Online now";
-  }else{
-    document.getElementById("lastSeen").textContent =
-      lastOnline ? `Last seen ${fmt(Date.now()-lastOnline)} ago` : "Offline";
-  }
+    const status = data.discord_status;
+    document.getElementById("status").className = `status ${status}`;
+    document.getElementById("status").textContent = status.toUpperCase();
+    document.querySelector(".avatar-wrapper").className = `avatar-wrapper ${status}`;
 
-  const spotify = data.activities.find(a=>a.name==="Spotify");
-  const sEl = document.getElementById("spotify");
+    if(status !== "offline"){
+      lastOnline = Date.now();
+      document.getElementById("lastSeen").textContent = "Online now";
+    }else{
+      document.getElementById("lastSeen").textContent =
+        lastOnline ? `Last seen ${fmt(Date.now()-lastOnline)} ago` : "Offline";
+    }
 
-  if(spotify){
-    sEl.classList.remove("hidden");
-    document.getElementById("song").textContent = spotify.details;
-    document.getElementById("artist").textContent = spotify.state;
-    document.getElementById("albumArt").src =
-      `https://i.scdn.co/image/${spotify.assets.large_image.replace("spotify:","")}`;
+    const spotify = (data.activities || []).find(a => a.name === "Spotify");
+    const sEl = document.getElementById("spotify");
 
-    const now = Date.now();
-    const start = spotify.timestamps.start;
-    const end = spotify.timestamps.end;
-    document.getElementById("current").textContent = fmt(now-start);
-    document.getElementById("end").textContent = fmt(end-start);
-    document.getElementById("progress").style.width =
-      `${Math.min(((now-start)/(end-start))*100,100)}%`;
-  }else{
-    sEl.classList.add("hidden");
+    if(spotify){
+      sEl.classList.remove("hidden");
+      document.getElementById("song").textContent = spotify.details;
+      document.getElementById("artist").textContent = spotify.state;
+      document.getElementById("albumArt").src =
+        `https://i.scdn.co/image/${spotify.assets.large_image.replace("spotify:","")}`;
+
+      const now = Date.now();
+      const start = spotify.timestamps.start;
+      const end = spotify.timestamps.end;
+
+      document.getElementById("current").textContent = fmt(now - start);
+      document.getElementById("end").textContent = fmt(end - start);
+      document.getElementById("progress").style.width =
+        `${Math.min(((now-start)/(end-start))*100,100)}%`;
+    }else{
+      sEl.classList.add("hidden");
+    }
+
+  }catch(e){
+    console.error(e);
+    document.getElementById("lastSeen").textContent = "Failed to load status";
   }
 }
 
