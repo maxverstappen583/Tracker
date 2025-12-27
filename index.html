@@ -1,39 +1,124 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Discord Live Status</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Portfolio — Maxy / Max</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="page">
-    <div class="card skeleton" id="card">
-      <div class="avatar-wrapper">
-        <img id="avatar">
-      </div>
+  <main class="wrap">
 
-      <h2 id="username">Loading...</h2>
-
-      <div id="status" class="status">LOADING</div>
-      <p id="lastSeen" class="last-seen"></p>
-
-      <div id="spotify" class="spotify hidden">
-        <img id="albumArt">
-        <div class="spotify-info">
-          <p id="song"></p>
-          <p id="artist"></p>
-          <div class="time">
-            <span id="current">0:00</span>
-            <span id="end">0:00</span>
+    <!-- STATUS / HERO -->
+    <section class="status-section">
+      <div class="status-card card skeleton" id="card">
+        <div class="avatar-row">
+          <div id="avatarWrap" class="avatar-wrap avatar-wrap--offline">
+            <img id="avatar" alt="Avatar">
+            <span id="statusDot" class="status-dot status-offline" aria-hidden="true"></span>
           </div>
-          <div class="bar">
-            <div id="progress"></div>
+        </div>
+
+        <h1 id="username" class="username">Loading…</h1>
+        <div id="statusText" class="status-text muted">—</div>
+        <div id="lastSeen" class="last-seen muted">—</div>
+
+        <div id="spotify" class="spotify-card hidden" aria-live="polite">
+          <img id="albumArt" class="spotify-art" alt="Album art">
+          <div class="spotify-info">
+            <div class="song" id="song">Song</div>
+            <div class="artist muted" id="artist">Artist</div>
+            <div class="progress" aria-hidden="true">
+              <div id="progressBar" class="progress-bar" style="width:0%"></div>
+            </div>
+            <div class="progress-time muted">
+              <span id="timeCurrent">0:00</span>
+              <span id="timeTotal">0:00</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </div>
-  <script src="script.js"></script>
+    </section>
+
+    <!-- SKILLS -->
+    <section class="section">
+      <h2 class="section-title">My Skills</h2>
+      <div class="grid skills-grid">
+        <!-- Python SVG -->
+        <div class="skill-card card">
+          <svg class="skill-logo" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <rect rx="18" width="128" height="128" fill="#3776AB"/>
+            <text x="50%" y="65%" font-size="44" fill="#fff" font-family="Arial" text-anchor="middle">Py</text>
+          </svg>
+          <div class="skill-name">Python</div>
+        </div>
+
+        <!-- JavaScript SVG -->
+        <div class="skill-card card">
+          <svg class="skill-logo" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <rect rx="18" width="128" height="128" fill="#F7DF1E"/>
+            <text x="50%" y="65%" font-size="44" fill="#000" font-family="Arial" text-anchor="middle">JS</text>
+          </svg>
+          <div class="skill-name">JavaScript</div>
+        </div>
+
+        <!-- HTML SVG -->
+        <div class="skill-card card">
+          <svg class="skill-logo" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <rect rx="18" width="128" height="128" fill="#E34F26"/>
+            <text x="50%" y="62%" font-size="28" fill="#fff" font-family="Arial" text-anchor="middle">HTML</text>
+          </svg>
+          <div class="skill-name">HTML</div>
+        </div>
+
+        <!-- CSS SVG -->
+        <div class="skill-card card">
+          <svg class="skill-logo" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <rect rx="18" width="128" height="128" fill="#1572B6"/>
+            <text x="50%" y="62%" font-size="28" fill="#fff" font-family="Arial" text-anchor="middle">CSS</text>
+          </svg>
+          <div class="skill-name">CSS</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROJECTS -->
+    <section class="section">
+      <h2 class="section-title">Projects</h2>
+
+      <div class="projects-grid">
+
+        <!-- MAXY -->
+        <article class="project-card card">
+          <div class="project-image-wrap">
+            <img src="https://files.catbox.moe/mf3gcj.png" alt="Maxy project image" class="project-image">
+          </div>
+          <div class="project-content">
+            <h3 class="project-title">Maxy</h3>
+            <p class="project-desc">
+              Maxy is a personal project focused on building a reliable and user-friendly platform designed to support and manage online communities efficiently.
+            </p>
+          </div>
+        </article>
+
+        <!-- MAX -->
+        <article class="project-card card">
+          <div class="project-image-wrap">
+            <img src="https://files.catbox.moe/76zc28.png" alt="Max project image" class="project-image">
+          </div>
+          <div class="project-content">
+            <h3 class="project-title">Max</h3>
+            <p class="project-desc">
+              Max is a discontinued project that explored efficient tools and structured platform design.
+            </p>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script src="script.js" defer></script>
 </body>
 </html>
