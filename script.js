@@ -1,5 +1,5 @@
 /* ---------- CONFIG ---------- */
-/* Replace USER_ID if needed */
+/* PUT YOUR DISCORD ID (string) */
 const USER_ID = "1319292111325106296";
 const POLL_MS = 4000;
 
@@ -28,15 +28,54 @@ function buildAvatarUrl(user){
   const ext = isAnim ? "gif" : "png";
   return `https://cdn.discordapp.com/avatars/${id}/${av}.${ext}?size=512`;
 }
+function buildBannerUrl(user){
+  if(!user) return "";
+  const id = user.id;
+  const banner = user.banner;
+  if(!banner) return "";
+  const isAnim = banner.startsWith("a_");
+  const ext = isAnim ? "gif" : "png";
+  return `https://cdn.discordapp.com/banners/${id}/${banner}.${ext}?size=1024`;
+}
+
+/* Best-effort badge mapping from common public_flags bits.
+   Note: Discord's flags values may change; this is best-effort. */
+function decodeBadges(flags){
+  if(!flags) return [];
+  const n = Number(flags);
+  const badges = [];
+  const mapping = [
+    {bit:1, name:"Staff"},
+    {bit:2, name:"Partner"},
+    {bit:4, name:"HypeSquadEvents"},
+    {bit:8, name:"Bug Hunter Level 1"},
+    {bit:64, name:"HypeSquad Bravery"}, // etc - best-effort
+    {bit:128, name:"House Brilliance"},
+    {bit:256, name:"House Balance"},
+    {bit:512, name:"Early Supporter"},
+    {bit:1024, name:"Team User"},
+    {bit:16384, name:"Bug Hunter Level 2"},
+    {bit:65536, name:"Verified Bot Dev"},
+    {bit:131072, name:"Certified Moderator"},
+  ];
+  for(const m of mapping){
+    if((n & m.bit) === m.bit) badges.push(m.name);
+  }
+  return badges;
+}
 
 /* ---------- DOM refs ---------- */
 const $card = document.getElementById("card");
 const $username = document.getElementById("username");
 const $avatar = document.getElementById("avatar");
+const $heroAvatar = document.getElementById("heroAvatar");
 const $avatarWrap = document.getElementById("avatarWrap");
 const $statusText = document.getElementById("statusText");
 const $lastSeen = document.getElementById("lastSeen");
 const $statusDot = document.getElementById("statusDot");
+const $badges = document.getElementById("badges");
+const $bannerWrap = document.getElementById("bannerWrap");
+const $bannerImg = document.getElementById("bannerImg");
 
 const $spotify = document.getElementById("spotify");
 const $albumArt = document.getElementById("albumArt");
@@ -66,13 +105,39 @@ async function fetchStatus(){
 
     const d = json.data;
     $card.classList.remove("skeleton");
+
+    // username + avatar + hero avatar
     $username.textContent = d.discord_user?.username || "Unknown";
     $avatar.src = buildAvatarUrl(d.discord_user);
+    $heroAvatar.src = buildAvatarUrl(d.discord_user);
 
+    // banner
+    const bannerUrl = buildBannerUrl(d.discord_user);
+    if(bannerUrl){
+      $bannerWrap.classList.remove("hidden");
+      $bannerImg.src = bannerUrl;
+    } else {
+      $bannerWrap.classList.add("hidden");
+    }
+
+    // badges (best-effort)
+    $badges.innerHTML = "";
+    const flags = d.discord_user?.public_flags ?? d.discord_user?.flags ?? null;
+    const badgeNames = flags ? decodeBadges(flags) : [];
+    if(badgeNames.length){
+      badgeNames.forEach(name => {
+        const el = document.createElement("span");
+        el.className = "badge";
+        el.textContent = name;
+        $badges.appendChild(el);
+      });
+    }
+
+    // status
     const status = (d.discord_status || "offline").toLowerCase();
     $statusText.textContent = status === "online" ? "Online" : status === "idle" ? "Away" : status === "dnd" ? "Do not disturb" : "Offline";
 
-    // avatar glow class
+    // avatar glow class (applies visual effect via CSS classes)
     $avatarWrap.className = `avatar-wrap`;
     $avatarWrap.classList.add(`avatar-wrap--${status}`);
 
@@ -86,6 +151,10 @@ async function fetchStatus(){
     } else {
       $lastSeen.textContent = lastActive ? `Offline for ${msToHuman(Date.now() - lastActive)}` : "Offline";
     }
+
+    // contact button -> discord profile
+    const contactBtn = document.getElementById("contactBtn");
+    contactBtn.href = `https://discord.com/users/${USER_ID}`;
 
     // Spotify handling
     const activities = Array.isArray(d.activities) ? d.activities : [];
@@ -132,6 +201,6 @@ async function fetchStatus(){
   }
 }
 
-/* start */
+/* start polling */
 fetchStatus();
 setInterval(fetchStatus, POLL_MS);
