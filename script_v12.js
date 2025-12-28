@@ -1,8 +1,9 @@
-// script_v12.js — minimal, robust Lanyard + Spotify UI updater with fade for status text
+// script_v12.js — Lanyard UI updater: last-seen auto-fades away shortly after coming Online
 
 const USER_ID = "1319292111325106296";
 let lastOnline = Date.now();
 let spotifyTicker = null;
+let lastSeenHideTimer = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   run();
@@ -48,24 +49,52 @@ async function run() {
       offline: "Offline"
     };
 
-    // update statusText and lastSeen with fade
+    // update statusText with fade
     const statusLabel = statusMap[status] ?? status;
     await setTextFade("statusText", statusLabel);
 
+    // handle last-seen behaviour:
+    // - For online: show "Active now" briefly then fade the element away
+    // - For idle/dnd/offline: show the relevant text and ensure element is visible
+    const lastSeenEl = document.getElementById("lastSeen");
+    // clear any existing hide timer
+    if (lastSeenHideTimer) { clearTimeout(lastSeenHideTimer); lastSeenHideTimer = null; }
+
     if (status === "online") {
-      lastOnline = Date.now();
+      // ensure visible, set text, then schedule fade-out
+      if (lastSeenEl) {
+        lastSeenEl.classList.remove("hidden");
+        lastSeenEl.classList.remove("fade-out");
+      }
       await setTextFade("lastSeen", "Active now");
+
+      // schedule fade after a short visible period
+      lastSeenHideTimer = setTimeout(() => {
+        if (!lastSeenEl) return;
+        // fade out then hide after transition
+        lastSeenEl.classList.add("fade-out");
+        setTimeout(() => {
+          lastSeenEl.classList.add("hidden");
+        }, 380); // match CSS transition
+      }, 1500); // visible for 1.5s
     } else if (status === "idle") {
+      // ensure visible and show "Away now"
+      if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       await setTextFade("lastSeen", "Away now");
     } else if (status === "dnd") {
+      if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       await setTextFade("lastSeen", "Do not disturb");
-    } else {
+    } else { // offline
+      if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       const diff = lastOnline ? (Date.now() - lastOnline) : 0;
       await setTextFade("lastSeen", lastOnline ? `Offline for ${msToHuman(diff)}` : "Offline");
     }
 
     // update status dot
     setStatusDot(status);
+
+    // if user is not offline, update lastOnline timestamp
+    if (status !== "offline") lastOnline = Date.now();
 
     // contact link
     const contactBtn = document.getElementById("contactBtn");
@@ -85,35 +114,25 @@ async function run() {
 
 /* ---------- Fade helper for text updates ----------
    Usage: await setTextFade("statusText", "Online")
-   It fades out, swaps text, then fades back in. It avoids races by using an element-specific token.
+   It fades out, swaps text, then fades back in. Uses an element-specific token to avoid races.
 */
 function setTextFade(id, text) {
   const el = document.getElementById(id);
   if (!el) return Promise.resolve();
-  // initialize token
   el._fadeToken = (el._fadeToken || 0) + 1;
   const token = el._fadeToken;
 
-  // If text is identical, do a quick no-op (but still ensure visible)
   if (el.textContent === text) {
-    // If currently faded out, bring back
     el.classList.remove("fade-out");
     return Promise.resolve();
   }
 
   return new Promise(resolve => {
-    // start fade out
     el.classList.add("fade-out");
-
-    // wait for fade-out to complete (match CSS .36s). + small buffer
     setTimeout(() => {
-      if (el._fadeToken !== token) return resolve(); // canceled by newer call
-      // swap text
+      if (el._fadeToken !== token) return resolve();
       el.textContent = text;
-      // fade back in
       el.classList.remove("fade-out");
-
-      // wait for fade-in to finish
       setTimeout(() => {
         if (el._fadeToken !== token) return resolve();
         resolve();
@@ -183,7 +202,7 @@ function renderBadges(user) {
   });
 }
 
-/* SPOTIFY rendering — safe and repeat-aware (unchanged) */
+/* SPOTIFY rendering — safe and repeat-aware */
 async function renderSpotifySafe(spotify) {
   const spBox = document.getElementById("spotify");
   const albumArt = document.getElementById("albumArt");
