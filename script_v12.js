@@ -1,32 +1,23 @@
-// script_v12.js — minimal, robust Lanyard + Spotify UI updater
-// Replace your existing script with this file, then deploy and hard-refresh.
+// script_v12.js — minimal, robust Lanyard + Spotify UI updater (debug removed)
 
 const USER_ID = "1319292111325106296";
 let lastOnline = Date.now();
 let spotifyTicker = null;
 
 document.addEventListener("DOMContentLoaded", () => {
-  debug("JS loaded");
   run();
   setInterval(run, 4000);
 });
 
-function debug(msg) {
-  const d = document.getElementById("debug");
-  if (d) d.textContent = "Debug: " + msg;
-}
-
 // main runner
 async function run() {
-  debug("Fetching Lanyard…");
   try {
     const res = await fetch(`https://api.lanyard.rest/v1/users/${USER_ID}`, { cache: "no-store" });
-    if (!res.ok) { debug("HTTP " + res.status); return; }
+    if (!res.ok) return;
     const j = await res.json();
-    if (!j.success) { debug("Lanyard success=false"); return; }
+    if (!j.success) return;
 
     const data = j.data;
-    debug("Data OK");
 
     // user
     const user = data.discord_user || {};
@@ -43,7 +34,7 @@ async function run() {
       else { bannerWrap.classList.add("hidden"); bannerImg.src = ""; }
     }
 
-    // badges (best-effort: show only if flags exist)
+    // badges
     renderBadges(user);
 
     // status / last seen
@@ -68,11 +59,9 @@ async function run() {
     await renderSpotifySafe(spotify);
 
     document.body.classList.remove("loading");
-    debug("Rendered");
 
   } catch (err) {
     console.error(err);
-    debug("Fetch error");
     document.body.classList.remove("loading");
   }
 }
@@ -146,7 +135,6 @@ async function renderSpotifySafe(spotify) {
   const timeCur = document.getElementById("timeCurrent");
   const timeTot = document.getElementById("timeTotal");
 
-  // clear old ticker
   if (spotifyTicker) { clearInterval(spotifyTicker); spotifyTicker = null; }
 
   if (!spotify) {
@@ -157,11 +145,10 @@ async function renderSpotifySafe(spotify) {
     return;
   }
 
-  // In Lanyard you may have a top-level spotify object OR activity-based one
-  // Normalize fields
-  const isTop = !!spotify.track_id || !!spotify.album;
-  const start = isTop ? spotify.timestamps?.start : spotify.timestamps?.start;
-  const end = isTop ? spotify.timestamps?.end : spotify.timestamps?.end;
+  // normalize
+  const isTop = !!(spotify.track_id || spotify.album);
+  const start = spotify.timestamps?.start ?? null;
+  const end = spotify.timestamps?.end ?? null;
   const art = isTop ? spotify.album_art_url : (spotify.assets?.large_image ? `https://i.scdn.co/image/${spotify.assets.large_image.replace("spotify:","")}` : "");
   const song = isTop ? spotify.song || spotify.details : spotify.details;
   const artist = isTop ? spotify.artist || spotify.state : spotify.state;
@@ -171,7 +158,6 @@ async function renderSpotifySafe(spotify) {
   if (artistEl) artistEl.textContent = artist || "";
   if (albumArt && art) albumArt.src = art;
 
-  // try sampling color but fallback if blocked
   (async () => {
     if (!progressFill) return;
     const color = await sampleColor(art);
