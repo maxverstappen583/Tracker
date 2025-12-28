@@ -57,6 +57,20 @@ html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,
 .badge-icon.show{transform:scale(1);opacity:1}
 .badge-icon svg{width:18px;height:18px;display:block;fill:#cfe6ff}
 
+/* status text + last-seen: fade animation */
+.status-text,
+.last-seen {
+  display: inline-block; /* needed so transform/opacity animates smoothly */
+  transition: opacity .36s cubic-bezier(.2,.85,.25,1), transform .36s cubic-bezier(.2,.85,.25,1);
+  opacity: 1;
+  transform: translateY(0);
+  color: var(--muted);
+}
+.fade-out {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
 /* profile buttons */
 .profile-buttons{display:flex;gap:10px;justify-content:flex-start;margin-top:8px}
 .btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--accent);color:white;text-decoration:none;font-weight:600;box-shadow:0 8px 24px rgba(79,124,255,0.08);transition:transform .18s}
