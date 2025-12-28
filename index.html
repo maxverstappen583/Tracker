@@ -11,24 +11,68 @@
 
     <!-- HERO / Intro -->
     <section class="hero">
-      <h1 class="intro pop">Hello, I'm <span>Max</span></h1>
-      <p class="subtitle pop delay">A developer specializing in software development</p>
+      <div class="hero-inner">
+        <div class="hero-text">
+          <h1 class="intro pop">Hello, I'm <span>Max</span></h1>
+          <p class="subtitle pop delay">A developer specializing in software development</p>
+        </div>
+        <!-- small avatar near hero (not bigger) -->
+        <div class="hero-avatar pop delay">
+          <img id="heroAvatar" alt="profile avatar">
+        </div>
+      </div>
     </section>
 
-    <!-- PROFILE / Status -->
-    <section class="profile-section">
-      <div class="profile-card card pop delay2" id="card">
-        <div class="avatar-wrap" id="avatarWrap">
-          <img id="avatar" alt="Avatar">
-          <span id="statusDot" class="status-dot status-offline" aria-hidden="true"></span>
+    <!-- ABOUT (now before status) -->
+    <section class="about-section section pop delay2">
+      <h2 class="section-title">About Me</h2>
+      <p class="about-text">
+        I’m a Full Stack Developer with a strong focus on Python, passionate about building clean, efficient, and scalable web applications.
+        While Python is my specialty, I’m also proficient in front-end technologies including HTML, CSS, and JavaScript, allowing me to create seamless
+        and responsive user experiences.
+        <br><br>
+        I enjoy tackling challenging problems, optimizing code, and continuously learning new tools and frameworks to stay at the forefront of web development.
+        My goal is to deliver solutions that are not only functional but also intuitive and visually appealing.
+      </p>
+
+      <div class="know-polished">I know these (polished)</div>
+
+      <div class="skills pop delay2b">
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg" alt="Python logo">
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/javascript/javascript-original.svg" alt="JS logo">
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/html5/html5-original.svg" alt="HTML logo">
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/css3/css3-original.svg" alt="CSS logo">
+      </div>
+    </section>
+
+    <!-- PROFILE / Status (uses Lanyard) -->
+    <section class="profile-section section">
+      <div class="profile-card card pop delay3" id="card">
+        <!-- banner (if available) -->
+        <div id="bannerWrap" class="banner-wrap hidden">
+          <img id="bannerImg" alt="Banner">
         </div>
 
-        <h2 id="username" class="username">Loading…</h2>
-        <div id="statusText" class="status-text muted">—</div>
-        <div id="lastSeen" class="last-seen muted">—</div>
+        <div class="profile-inner">
+          <div class="avatar-wrap" id="avatarWrap">
+            <img id="avatar" alt="Avatar">
+            <span id="statusDot" class="status-dot status-offline" aria-hidden="true"></span>
+          </div>
 
-        <div class="profile-buttons">
-          <a class="btn contact" id="contactBtn" href="mailto:business@yourmail.com">Contact for Business</a>
+          <div class="profile-meta">
+            <h2 id="username" class="username">Loading…</h2>
+
+            <!-- badges row -->
+            <div id="badges" class="badges"></div>
+
+            <div id="statusText" class="status-text muted">—</div>
+            <div id="lastSeen" class="last-seen muted">—</div>
+
+            <div class="profile-buttons">
+              <!-- contact goes to your Discord profile -->
+              <a id="contactBtn" class="btn contact" href="#" target="_blank" rel="noopener">Contact for Business</a>
+            </div>
+          </div>
         </div>
 
         <!-- optional Spotify area -->
@@ -50,26 +94,6 @@
       </div>
     </section>
 
-    <!-- ABOUT -->
-    <section class="about-section section pop delay3">
-      <h2 class="section-title">About Me</h2>
-      <p class="about-text">
-        I’m a Full Stack Developer with a strong focus on Python, passionate about building clean, efficient, and scalable web applications.
-        While Python is my specialty, I’m also proficient in front-end technologies including HTML, CSS, and JavaScript, allowing me to create seamless
-        and responsive user experiences.
-        <br><br>
-        I enjoy tackling challenging problems, optimizing code, and continuously learning new tools and frameworks to stay at the forefront of web development.
-        My goal is to deliver solutions that are not only functional but also intuitive and visually appealing.
-      </p>
-
-      <div class="skills pop delay3b">
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg" alt="Python logo">
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/javascript/javascript-original.svg" alt="JS logo">
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/html5/html5-original.svg" alt="HTML logo">
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/css3/css3-original.svg" alt="CSS logo">
-      </div>
-    </section>
-
     <!-- PROJECTS -->
     <section class="projects-section section pop delay4">
       <h2 class="section-title">Projects</h2>
@@ -87,7 +111,7 @@
               Maxy is a personal project focused on building a reliable and user-friendly platform designed to support and manage online communities efficiently.
             </p>
             <div class="project-actions">
-              <a class="btn view-bot" href="https://discord.com/oauth2/authorize?client_id=1408075564853493811" target="_blank">View Bot</a>
+              <a class="btn view-bot" href="https://discord.com/oauth2/authorize?client_id=1408075564853493811" target="_blank" rel="noopener">View Bot</a>
             </div>
           </div>
         </article>
