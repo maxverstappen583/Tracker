@@ -15,9 +15,6 @@
 html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#e6eef8}
 .wrap{max-width:980px;margin:0 auto;padding:28px 18px}
 
-/* debug */
-.debug{position:fixed;left:12px;top:12px;background:rgba(0,0,0,0.45);color:#fff;padding:8px 10px;border-radius:8px;font-family:monospace;z-index:9999;max-width:calc(100% - 40px);font-size:13px}
-
 /* hero */
 .hero{padding:18px 0 6px}
 .hero-inner{display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap}
