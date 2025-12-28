@@ -1,5 +1,4 @@
 /* ---------- CONFIG ---------- */
-/* PUT YOUR DISCORD ID (string) */
 const USER_ID = "1319292111325106296";
 const POLL_MS = 4000;
 
@@ -38,25 +37,33 @@ function buildBannerUrl(user){
   return `https://cdn.discordapp.com/banners/${id}/${banner}.${ext}?size=1024`;
 }
 
-/* ---------- badge icons mapping (bit -> {name,svg}) ---------- */
-function badgesFromFlags(flags){
-  const n = Number(flags) || 0;
-  const mapping = [
+/* ---------- detailed badge set (svg icons) ----------
+ Bits are mapped to commonly used Discord public flag values.
+ If your account has no public flags, no badges will appear.
+*/
+function badgeDefinitions(){
+  return [
     {bit:1, key:"staff", title:"Discord Staff", svg:
-      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l2.6 5.6 6.1.6-4.5 3.7.9 6.1L12 16.9 6.9 18.0l.9-6.1L3.3 8.2l6.1-.6L12 2z"/></svg>`},
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2 15 9l7 .6-5 4 1 7L12 17l-6 3 1-7-5-4 7-.6L12 2z"/></svg>`},
     {bit:2, key:"partner", title:"Partner", svg:
-      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l2.6 5.6 6.1.6-4.5 3.7.9 6.1L12 16.9 6.9 18.0l.9-6.1L3.3 8.2l6.1-.6L12 2z"/></svg>`},
-    {bit:4, key:"hypesquad", title:"HypeSquad", svg:
-      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5"/></svg>`},
-    {bit:8, key:"bughunter", title:"Bug Hunter", svg:
-      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a6 6 0 016 6v2h2v2h-2v2a6 6 0 01-6 6 6 6 0 01-6-6v-2H4v-2h2V8a6 6 0 016-6z"/></svg>`},
-    {bit:512, key:"early", title:"Early Supporter", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l2.9 6 6.6.6-4.8 3.9 1.2 6.5L12 17l-7.9 2.0 1.2-6.5L.5 8.6l6.6-.6L12 2z"/></svg>`},
+    {bit:4, key:"hypesquad_events", title:"HypeSquad Events", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l9 4-9 4-9-4 9-4zm0 12l9 4-9 4-9-4 9-4z"/></svg>`},
+    {bit:8, key:"bug_hunter", title:"Bug Hunter", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M7 8h10v2h-1v2h1v2H7v-2h1v-2H7zM12 2a6 6 0 016 6v1H6V8a6 6 0 016-6z"/></svg>`},
+    {bit:64, key:"hypesquad_bravery", title:"HypeSquad Bravery", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>`},
+    {bit:128, key:"hypesquad_brilliance", title:"HypeSquad Brilliance", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 .5l2.6 6.4L21 8l-4.3 3.3L18 18l-6-3.6L6 18l1.3-6.7L3 8l6.4-1.1L12 .5z"/></svg>`},
+    {bit:256, key:"hypesquad_balance", title:"HypeSquad Balance", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l9 4-9 4-9-4 9-4zm0 10l9 4-9 4-9-4 9-4z"/></svg>`},
+    {bit:512, key:"early_supporter", title:"Early Supporter", svg:
       `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l3 7h7l-5.6 4.1L20 22l-8-5-8 5 1.6-8.9L0 9h7l3-7z"/></svg>`},
-    {bit:65536, key:"botdev", title:"Verified Bot Dev", svg:
+    {bit:16384, key:"bug_hunter_2", title:"Bug Hunter (Gold)", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a6 6 0 016 6v2h2v2h-2v2a6 6 0 01-6 6 6 6 0 01-6-6v-2H4v-2h2V8a6 6 0 016-6z"/></svg>`},
+    {bit:65536, key:"verified_bot_dev", title:"Verified Bot Developer", svg:
       `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a3 3 0 013 3v1h3v2H6V6h3V5a3 3 0 013-3zM6 10h12v8a2 2 0 01-2 2H8a2 2 0 01-2-2v-8z"/></svg>`},
-    // add more mappings as needed
   ];
-  return mapping.filter(m => (n & m.bit) === m.bit);
 }
 
 /* ---------- DOM refs ---------- */
@@ -91,7 +98,6 @@ async function fetchStatus(){
     const json = await res.json();
 
     if(!json.success){
-      // not monitored by Lanyard
       $username.textContent = "Not monitored";
       $statusText.textContent = "Join the Lanyard Discord and allow presence";
       $card.classList.remove("skeleton");
@@ -115,17 +121,20 @@ async function fetchStatus(){
       $bannerWrap.classList.add("hidden");
     }
 
-    // badges (icons)
+    // badges (icons) - try public_flags then flags
     $badges.innerHTML = "";
-    const flags = d.discord_user?.public_flags ?? d.discord_user?.flags ?? 0;
-    const badgeDefs = badgesFromFlags(flags);
-    badgeDefs.forEach(b => {
-      const el = document.createElement("span");
-      el.className = "badge-icon";
-      el.title = b.title;
-      el.innerHTML = b.svg;
-      $badges.appendChild(el);
-    });
+    const rawFlags = (d.discord_user && (d.discord_user.public_flags ?? d.discord_user.flags)) ?? 0;
+    const defs = badgeDefinitions();
+    const found = defs.filter(def => (Number(rawFlags) & def.bit) === def.bit);
+    if(found.length){
+      found.forEach(b => {
+        const el = document.createElement("span");
+        el.className = "badge-icon";
+        el.title = b.title;
+        el.innerHTML = b.svg;
+        $badges.appendChild(el);
+      });
+    }
 
     // status
     const status = (d.discord_status || "offline").toLowerCase();
