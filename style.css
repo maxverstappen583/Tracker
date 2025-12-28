@@ -15,6 +15,9 @@
 html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#e6eef8}
 .wrap{max-width:980px;margin:0 auto;padding:28px 18px}
 
+/* debug */
+.debug{position:fixed;left:12px;top:12px;background:rgba(0,0,0,0.45);color:#fff;padding:8px 10px;border-radius:8px;font-family:monospace;z-index:9999;max-width:calc(100% - 40px);font-size:13px}
+
 /* hero */
 .hero{padding:18px 0 6px}
 .hero-inner{display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap}
@@ -53,7 +56,8 @@ html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,
 .top-row{display:flex;align-items:center;gap:10px}
 .username{font-size:20px;margin:6px 0 4px 0}
 .badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
-.badge-icon{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:rgba(255,255,255,0.02)}
+.badge-icon{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:rgba(255,255,255,0.02);transform:scale(.6);opacity:0;transition:transform .28s cubic-bezier(.2,.85,.25,1),opacity .28s}
+.badge-icon.show{transform:scale(1);opacity:1}
 .badge-icon svg{width:18px;height:18px;display:block;fill:#cfe6ff}
 
 /* profile buttons */
