@@ -1,4 +1,4 @@
-// script_v12.js — minimal, robust Lanyard + Spotify UI updater (debug removed)
+// script_v12.js — minimal, robust Lanyard + Spotify UI updater with fade for status text
 
 const USER_ID = "1319292111325106296";
 let lastOnline = Date.now();
@@ -37,18 +37,35 @@ async function run() {
     // badges
     renderBadges(user);
 
-    // status / last seen
-    const status = (data.discord_status || "offline").toLowerCase();
-    if (status !== "offline") {
+    // status / last seen — mapping for online / idle / dnd / offline / invisible
+    const rawStatus = (data.discord_status || "offline").toLowerCase();
+    const status = rawStatus === "invisible" ? "offline" : rawStatus; // optional treatment of invisible
+
+    const statusMap = {
+      online: "Online",
+      idle: "Away",
+      dnd: "Do not disturb",
+      offline: "Offline"
+    };
+
+    // update statusText and lastSeen with fade
+    const statusLabel = statusMap[status] ?? status;
+    await setTextFade("statusText", statusLabel);
+
+    if (status === "online") {
       lastOnline = Date.now();
-      setText("statusText", "Online");
-      setText("lastSeen", "Active now");
-      setStatusDot(status);
+      await setTextFade("lastSeen", "Active now");
+    } else if (status === "idle") {
+      await setTextFade("lastSeen", "Away now");
+    } else if (status === "dnd") {
+      await setTextFade("lastSeen", "Do not disturb");
     } else {
-      setText("statusText", "Offline");
-      setText("lastSeen", lastOnline ? `Offline for ${msToHuman(Date.now() - lastOnline)}` : "Offline");
-      setStatusDot("offline");
+      const diff = lastOnline ? (Date.now() - lastOnline) : 0;
+      await setTextFade("lastSeen", lastOnline ? `Offline for ${msToHuman(diff)}` : "Offline");
     }
+
+    // update status dot
+    setStatusDot(status);
 
     // contact link
     const contactBtn = document.getElementById("contactBtn");
@@ -64,6 +81,45 @@ async function run() {
     console.error(err);
     document.body.classList.remove("loading");
   }
+}
+
+/* ---------- Fade helper for text updates ----------
+   Usage: await setTextFade("statusText", "Online")
+   It fades out, swaps text, then fades back in. It avoids races by using an element-specific token.
+*/
+function setTextFade(id, text) {
+  const el = document.getElementById(id);
+  if (!el) return Promise.resolve();
+  // initialize token
+  el._fadeToken = (el._fadeToken || 0) + 1;
+  const token = el._fadeToken;
+
+  // If text is identical, do a quick no-op (but still ensure visible)
+  if (el.textContent === text) {
+    // If currently faded out, bring back
+    el.classList.remove("fade-out");
+    return Promise.resolve();
+  }
+
+  return new Promise(resolve => {
+    // start fade out
+    el.classList.add("fade-out");
+
+    // wait for fade-out to complete (match CSS .36s). + small buffer
+    setTimeout(() => {
+      if (el._fadeToken !== token) return resolve(); // canceled by newer call
+      // swap text
+      el.textContent = text;
+      // fade back in
+      el.classList.remove("fade-out");
+
+      // wait for fade-in to finish
+      setTimeout(() => {
+        if (el._fadeToken !== token) return resolve();
+        resolve();
+      }, 380);
+    }, 220);
+  });
 }
 
 /* helpers */
@@ -92,10 +148,12 @@ function msToHuman(ms) {
 function setStatusDot(status) {
   const dot = document.getElementById("statusDot");
   if (!dot) return;
-  dot.className = `status-dot status-${status}`;
+  const allowed = ["online","idle","dnd","offline"];
+  const cls = allowed.includes(status) ? status : "offline";
+  dot.className = `status-dot status-${cls}`;
 }
 
-/* BADGES - show only if flags present, animate if so */
+/* BADGES */
 function badgeDefs() {
   return [
     {bit:1, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 15 9l7 .6-5 4 1 7L12 17 6.9 18 8 11l-5-4 7-.6L12 2z"/></svg>`},
@@ -125,7 +183,7 @@ function renderBadges(user) {
   });
 }
 
-/* SPOTIFY rendering — safe and repeat-aware */
+/* SPOTIFY rendering — safe and repeat-aware (unchanged) */
 async function renderSpotifySafe(spotify) {
   const spBox = document.getElementById("spotify");
   const albumArt = document.getElementById("albumArt");
