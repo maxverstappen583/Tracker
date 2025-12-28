@@ -1,13 +1,17 @@
-/* ---------- script.js (full file) ----------
-   Shows Lanyard-powered Discord status, banner, badges (animated only when present),
-   Spotify mini-card, last-seen timer. Drop this in place of your existing script.js.
+/* ---------- script.js (updated) ----------
+ - Handles Lanyard status + banner + badges (animated only when present)
+ - Spotify improvements:
+    * If Spotify timestamps pass the 'end' (repeat/loop), the progress wraps correctly
+    * For very short songs the visible filled bar will never become invisible (min percent)
+    * Progress bar color is sampled from the album art (dominant-ish color) when possible
+ - Drop in to replace your existing script.js (keep same HTML/CSS)
 */
 
-/* ---------- CONFIG ---------- */
+/* CONFIG */
 const USER_ID = "1319292111325106296"; // <-- your Discord ID
 const POLL_MS = 4000;
 
-/* ---------- small helpers ---------- */
+/* Helpers */
 function msToHuman(ms) {
   if (ms == null) return "0s";
   const s = Math.floor(ms / 1000);
@@ -42,10 +46,7 @@ function buildBannerUrl(user) {
   return `https://cdn.discordapp.com/banners/${id}/${banner}.${ext}?size=1024`;
 }
 
-/* ---------- badge definitions (bit -> svg) ----------
-   Keep this list as a small set of common badges. We will show badges
-   only if the account actually has the corresponding bits in public_flags/flags.
-*/
+/* Badge defs (same as before) */
 function badgeDefinitions() {
   return [
     { bit: 1, key: "staff", title: "Discord Staff", svg:
@@ -65,7 +66,7 @@ function badgeDefinitions() {
   ];
 }
 
-/* ---------- DOM refs ---------- */
+/* DOM refs (expected to exist in the page) */
 const $card = document.getElementById("card");
 const $username = document.getElementById("username");
 const $avatar = document.getElementById("avatar");
@@ -90,9 +91,8 @@ const $contactBtn = document.getElementById("contactBtn");
 let lastActive = null;
 let spotifyTicker = null;
 
-/* ---------- animate helper (Web Animations API) ---------- */
+/* Animation helper */
 function popBadge(node) {
-  // animate scale & fade in; returns the Animation object
   try {
     return node.animate(
       [
@@ -103,14 +103,59 @@ function popBadge(node) {
       { duration: 380, easing: "cubic-bezier(.2,.85,.25,1)", fill: "forwards" }
     );
   } catch (e) {
-    // fallback: apply final style
     node.style.transform = "scale(1)";
     node.style.opacity = "1";
     return null;
   }
 }
 
-/* ---------- main Lanyard fetch & render ---------- */
+/* Get dominant-ish color from image (averaging center region).
+   Returns CSS rgb(...) string or null on failure. */
+async function getDominantColorFromImageUrl(url) {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      img.src = url;
+      img.onload = () => {
+        try {
+          // draw a small canvas and sample central area
+          const w = 64, h = 64;
+          const canvas = document.createElement("canvas");
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext("2d", { willReadFrequently: true });
+          // draw image scaled to canvas
+          ctx.drawImage(img, 0, 0, w, h);
+          const data = ctx.getImageData(0, 0, w, h).data;
+          // average color but bias to center by sample fewer edge pixels
+          let r = 0, g = 0, b = 0, count = 0;
+          for (let y = 8; y < h - 8; y++) {
+            for (let x = 8; x < w - 8; x++) {
+              const i = (y * w + x) * 4;
+              const alpha = data[i + 3];
+              if (alpha === 0) continue;
+              r += data[i]; g += data[i + 1]; b += data[i + 2];
+              count++;
+            }
+          }
+          if (!count) { resolve(null); return; }
+          r = Math.round(r / count);
+          g = Math.round(g / count);
+          b = Math.round(b / count);
+          resolve(`rgb(${r}, ${g}, ${b})`);
+        } catch (e) {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      // If the image is already cached and loaded, onload will still fire.
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+/* Main Fetch & Render */
 async function fetchStatus() {
   try {
     const res = await fetch(`https://api.lanyard.rest/v1/users/${USER_ID}`, { cache: "no-store" });
@@ -122,7 +167,6 @@ async function fetchStatus() {
       $username.textContent = "Not monitored";
       $statusText.textContent = "Join the Lanyard Discord and allow presence";
       $card.classList.remove("skeleton");
-      // hide badges if present
       $badges.innerHTML = "";
       $badges.style.display = "none";
       return;
@@ -131,7 +175,7 @@ async function fetchStatus() {
     const d = json.data;
     $card.classList.remove("skeleton");
 
-    // username + avatars
+    // username + avatar
     $username.textContent = d.discord_user?.username || "Unknown";
     $avatar.src = buildAvatarUrl(d.discord_user);
     if ($heroAvatar) $heroAvatar.src = buildAvatarUrl(d.discord_user);
@@ -146,44 +190,36 @@ async function fetchStatus() {
       $bannerImg.src = "";
     }
 
-    // BADGES: only show when actual flags exist
-    // Discord can expose flags under public_flags or flags (try both)
+    // Badges: show only if flags exist
+    $badges.innerHTML = "";
     const rawFlags = (d.discord_user && (d.discord_user.public_flags ?? d.discord_user.flags)) ?? 0;
     const defs = badgeDefinitions();
     const found = defs.filter(def => (Number(rawFlags) & def.bit) === def.bit);
 
-    $badges.innerHTML = "";
     if (!found.length) {
-      // no badges: hide the container (so nothing shows)
-      $badges.style.display = "none";
+      $badges.style.display = "none"; // hide container
     } else {
       $badges.style.display = "flex";
-      // append badges and animate them individually in sequence
       found.forEach((b, idx) => {
         const el = document.createElement("span");
         el.className = "badge-icon";
         el.setAttribute("title", b.title);
-        // svg uses currentColor; style via CSS (.badge-icon svg { fill: ... } )
         el.innerHTML = b.svg;
-        // start invisible for animation
         el.style.opacity = "0";
         el.style.transform = "scale(.6)";
         $badges.appendChild(el);
-
-        // staggered pop animation
-        const delay = idx * 80; // ms
-        setTimeout(() => popBadge(el), delay);
+        setTimeout(() => popBadge(el), idx * 80);
       });
     }
 
-    // status
+    // status text
     const status = (d.discord_status || "offline").toLowerCase();
     $statusText.textContent =
       status === "online" ? "Online" :
       status === "idle" ? "Away" :
       status === "dnd" ? "Do not disturb" : "Offline";
 
-    // avatar glow class
+    // avatar glow classes
     $avatarWrap.className = `avatar-wrap`;
     $avatarWrap.classList.add(`avatar-wrap--${status}`);
 
@@ -198,7 +234,7 @@ async function fetchStatus() {
       $lastSeen.textContent = lastActive ? `Offline for ${msToHuman(Date.now() - lastActive)}` : "Offline";
     }
 
-    // contact button -> discord profile
+    // contact button -> profile
     if ($contactBtn) $contactBtn.href = `https://discord.com/users/${USER_ID}`;
 
     // Spotify handling
@@ -210,32 +246,74 @@ async function fetchStatus() {
       $artist.textContent = spotify.state || "";
 
       const artId = (spotify.assets.large_image || "").replace("spotify:", "");
-      $albumArt.src = artId ? `https://i.scdn.co/image/${artId}` : "";
+      const artUrl = artId ? `https://i.scdn.co/image/${artId}` : "";
 
+      // set album art
+      $albumArt.src = artUrl;
+
+      // try to extract a color from the album art to use for progress bar
+      (async () => {
+        const color = artUrl ? await getDominantColorFromImageUrl(artUrl) : null;
+        if (color) {
+          // set a two-stop gradient based on color
+          $progressBar.style.background = `linear-gradient(90deg, ${color}, rgba(255,255,255,0.2))`;
+        } else {
+          // fallback gradient
+          $progressBar.style.background = `linear-gradient(90deg,#1db954,#6be38b)`;
+        }
+      })();
+
+      // timestamps
       const start = spotify.timestamps?.start ?? null;
       const end = spotify.timestamps?.end ?? null;
+
       if (start && end && end > start) {
+        // clear old ticker
         if (spotifyTicker) { clearInterval(spotifyTicker); spotifyTicker = null; }
+
+        const total = end - start;
+        const MIN_VISIBLE_PERCENT = 8; // ensures very short songs still show a visible bar
+
         const tick = () => {
           const now = Date.now();
-          const elapsed = Math.max(0, now - start);
-          const total = Math.max(1, end - start);
+          // If the current time has passed 'end', assume the track may have looped/repeated.
+          // Wrap elapsed so it doesn't keep increasing beyond end. This makes the progress bar wrap.
+          let rawElapsed = now - start;
+          if (rawElapsed < 0) rawElapsed = 0;
+
+          // compute elapsed modulo total so repeating songs wrap correctly
+          let elapsed = rawElapsed;
+          if (rawElapsed > total) {
+            elapsed = rawElapsed % total;
+          }
+
+          // percent
           const pct = Math.min(100, (elapsed / total) * 100);
-          $progressBar.style.width = pct + "%";
+          const visiblePct = Math.max(pct, MIN_VISIBLE_PERCENT);
+
+          // update UI
+          $progressBar.style.width = `${visiblePct}%`;
           $timeCurrent.textContent = msToMMSS(elapsed);
           $timeTotal.textContent = msToMMSS(total);
         };
+
+        // run immediately then every second
         tick();
         spotifyTicker = setInterval(tick, 1000);
       } else {
-        $progressBar.style.width = "8%";
+        // no timestamps -> static fallback
+        $progressBar.style.width = "20%";
         $timeCurrent.textContent = "0:00";
         $timeTotal.textContent = "—";
         if (spotifyTicker) { clearInterval(spotifyTicker); spotifyTicker = null; }
       }
     } else {
+      // hide spotify
       $spotify.classList.add("hidden");
       if (spotifyTicker) { clearInterval(spotifyTicker); spotifyTicker = null; }
+      // reset progress bar style to default (so old gradient doesn't persist)
+      $progressBar.style.background = `linear-gradient(90deg,#1db954,#6be38b)`;
+      $progressBar.style.width = `0%`;
     }
 
   } catch (err) {
