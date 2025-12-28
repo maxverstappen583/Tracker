@@ -6,7 +6,11 @@
   <title>Max — Portfolio</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="loading">
+
+  <!-- debug (mobile-safe) -->
+  <div id="debug" class="debug">Debug: starting…</div>
+
   <main class="wrap">
 
     <!-- HERO -->
@@ -22,7 +26,7 @@
       </div>
     </section>
 
-    <!-- ABOUT (before status) -->
+    <!-- ABOUT -->
     <section class="about-section section">
       <h2 class="section-title">About Me</h2>
       <p class="about-text">
@@ -30,10 +34,6 @@
         efficient, and scalable web applications. While Python is my specialty, I’m also proficient
         in front-end technologies including HTML, CSS, and JavaScript, allowing me to create seamless
         and responsive user experiences.
-        <br><br>
-        I enjoy tackling challenging problems, optimizing code, and continuously learning new tools
-        and frameworks to stay at the forefront of web development. My goal is to deliver solutions
-        that are not only functional but also intuitive and visually appealing.
       </p>
 
       <div class="know">Core skills</div>
@@ -48,7 +48,6 @@
     <!-- PROFILE / STATUS -->
     <section class="profile-section section">
       <div class="profile-card card" id="card">
-        <!-- banner (if available) -->
         <div id="bannerWrap" class="banner-wrap hidden">
           <img id="bannerImg" alt="Banner">
         </div>
@@ -62,7 +61,7 @@
           <div class="profile-meta">
             <div class="top-row">
               <h2 id="username" class="username">Loading…</h2>
-              <div id="badges" class="badges"></div>
+              <div id="badges" class="badges" aria-hidden="true"></div>
             </div>
 
             <div id="statusText" class="status-text muted">—</div>
@@ -74,14 +73,13 @@
           </div>
         </div>
 
-        <!-- Spotify mini card -->
+        <!-- Spotify -->
         <div id="spotify" class="spotify-card hidden" aria-live="polite">
           <img id="albumArt" class="spotify-art" alt="Album art">
           <div class="spotify-info">
             <div class="song" id="song">Song</div>
             <div class="artist muted" id="artist">Artist</div>
 
-            <!-- PROGRESS: container stays full width; fill changes -->
             <div class="progress-container" aria-hidden="true">
               <div id="progressFill" class="progress-fill"></div>
             </div>
@@ -130,6 +128,6 @@
 
   </main>
 
-  <script src="script.js"></script>
+  <script src="script.js" defer></script>
 </body>
 </html>
