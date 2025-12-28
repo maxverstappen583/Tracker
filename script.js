@@ -38,30 +38,25 @@ function buildBannerUrl(user){
   return `https://cdn.discordapp.com/banners/${id}/${banner}.${ext}?size=1024`;
 }
 
-/* Best-effort badge mapping from common public_flags bits.
-   Note: Discord's flags values may change; this is best-effort. */
-function decodeBadges(flags){
-  if(!flags) return [];
-  const n = Number(flags);
-  const badges = [];
+/* ---------- badge icons mapping (bit -> {name,svg}) ---------- */
+function badgesFromFlags(flags){
+  const n = Number(flags) || 0;
   const mapping = [
-    {bit:1, name:"Staff"},
-    {bit:2, name:"Partner"},
-    {bit:4, name:"HypeSquadEvents"},
-    {bit:8, name:"Bug Hunter Level 1"},
-    {bit:64, name:"HypeSquad Bravery"}, // etc - best-effort
-    {bit:128, name:"House Brilliance"},
-    {bit:256, name:"House Balance"},
-    {bit:512, name:"Early Supporter"},
-    {bit:1024, name:"Team User"},
-    {bit:16384, name:"Bug Hunter Level 2"},
-    {bit:65536, name:"Verified Bot Dev"},
-    {bit:131072, name:"Certified Moderator"},
+    {bit:1, key:"staff", title:"Discord Staff", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l2.6 5.6 6.1.6-4.5 3.7.9 6.1L12 16.9 6.9 18.0l.9-6.1L3.3 8.2l6.1-.6L12 2z"/></svg>`},
+    {bit:2, key:"partner", title:"Partner", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l2.6 5.6 6.1.6-4.5 3.7.9 6.1L12 16.9 6.9 18.0l.9-6.1L3.3 8.2l6.1-.6L12 2z"/></svg>`},
+    {bit:4, key:"hypesquad", title:"HypeSquad", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5"/></svg>`},
+    {bit:8, key:"bughunter", title:"Bug Hunter", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a6 6 0 016 6v2h2v2h-2v2a6 6 0 01-6 6 6 6 0 01-6-6v-2H4v-2h2V8a6 6 0 016-6z"/></svg>`},
+    {bit:512, key:"early", title:"Early Supporter", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l3 7h7l-5.6 4.1L20 22l-8-5-8 5 1.6-8.9L0 9h7l3-7z"/></svg>`},
+    {bit:65536, key:"botdev", title:"Verified Bot Dev", svg:
+      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a3 3 0 013 3v1h3v2H6V6h3V5a3 3 0 013-3zM6 10h12v8a2 2 0 01-2 2H8a2 2 0 01-2-2v-8z"/></svg>`},
+    // add more mappings as needed
   ];
-  for(const m of mapping){
-    if((n & m.bit) === m.bit) badges.push(m.name);
-  }
-  return badges;
+  return mapping.filter(m => (n & m.bit) === m.bit);
 }
 
 /* ---------- DOM refs ---------- */
@@ -106,7 +101,7 @@ async function fetchStatus(){
     const d = json.data;
     $card.classList.remove("skeleton");
 
-    // username + avatar + hero avatar
+    // username + avatars
     $username.textContent = d.discord_user?.username || "Unknown";
     $avatar.src = buildAvatarUrl(d.discord_user);
     $heroAvatar.src = buildAvatarUrl(d.discord_user);
@@ -120,24 +115,23 @@ async function fetchStatus(){
       $bannerWrap.classList.add("hidden");
     }
 
-    // badges (best-effort)
+    // badges (icons)
     $badges.innerHTML = "";
-    const flags = d.discord_user?.public_flags ?? d.discord_user?.flags ?? null;
-    const badgeNames = flags ? decodeBadges(flags) : [];
-    if(badgeNames.length){
-      badgeNames.forEach(name => {
-        const el = document.createElement("span");
-        el.className = "badge";
-        el.textContent = name;
-        $badges.appendChild(el);
-      });
-    }
+    const flags = d.discord_user?.public_flags ?? d.discord_user?.flags ?? 0;
+    const badgeDefs = badgesFromFlags(flags);
+    badgeDefs.forEach(b => {
+      const el = document.createElement("span");
+      el.className = "badge-icon";
+      el.title = b.title;
+      el.innerHTML = b.svg;
+      $badges.appendChild(el);
+    });
 
     // status
     const status = (d.discord_status || "offline").toLowerCase();
     $statusText.textContent = status === "online" ? "Online" : status === "idle" ? "Away" : status === "dnd" ? "Do not disturb" : "Offline";
 
-    // avatar glow class (applies visual effect via CSS classes)
+    // avatar glow class
     $avatarWrap.className = `avatar-wrap`;
     $avatarWrap.classList.add(`avatar-wrap--${status}`);
 
