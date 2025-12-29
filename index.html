@@ -62,8 +62,11 @@
               <div id="badges" class="badges" aria-hidden="true"></div>
             </div>
 
-            <div id="statusText" class="status-text muted">—</div>
-            <div id="lastSeen" class="last-seen muted">—</div>
+            <!-- STATUS BOX: ensures lastSeen is always on second line -->
+            <div class="status-box">
+              <div id="statusText" class="status-text">—</div>
+              <div id="lastSeen" class="last-seen hidden">—</div>
+            </div>
 
             <div class="profile-buttons">
               <a id="contactBtn" class="btn contact" href="#" target="_blank" rel="noopener">Contact for Business</a>
