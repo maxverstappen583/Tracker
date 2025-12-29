@@ -1,25 +1,26 @@
-/* script_v13.js — Improved Spotify update handling + robust Lanyard status
-   - Replaces previous spotify update; updates immediately when track changes
-   - Keeps the transition-based "Active now" logic and last-seen timer
+/* script_v13.js — Polling (REST) Lanyard client with transition-based last-seen
+   Behavior:
+   - On transition -> online / idle / dnd: show the label once (Active/Away/DND), fade out, then keep hidden
+   - While online/idle/dnd: lastSeen stays hidden
+   - On transition -> offline: show 'Last seen X ago' and update every second
 */
 
 const USER_ID = "1319292111325106296";
 const POLL_MS = 4000;
 
-let spotifyTicker = null;
 let offlineInterval = null;
-let lastOnlineTimestamp = null; // when we last observed the user NOT offline
+let lastOnlineTimestamp = null;
 let lastSeenHideTimer = null;
-let lastStatus = null; // previous status to detect transitions
-let previousSpotifyId = null; // track identifier to know when a new song started
+let lastStatus = null;
+let spotifyTicker = null;
+let previousSpotifyId = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   run();
   setInterval(run, POLL_MS);
 });
 
-/* ---------- Main fetch + render ---------- */
-async function run() {
+async function run(){
   try {
     const res = await fetch(`https://api.lanyard.rest/v1/users/${USER_ID}`, { cache: "no-store" });
     if (!res.ok) return;
@@ -49,78 +50,85 @@ async function run() {
     const rawStatus = (data.discord_status || "offline").toLowerCase();
     const status = rawStatus === "invisible" ? "offline" : rawStatus;
 
-    // when we see user not offline, capture lastOnlineTimestamp
+    // capture lastOnlineTimestamp when user is observed not-offline
     if (status !== "offline") lastOnlineTimestamp = Date.now();
 
-    // mapping
     const statusMap = { online: "Online", idle: "Away", dnd: "Do not disturb", offline: "Offline" };
-    const statusLabel = statusMap[status] ?? status;
+    const label = statusMap[status] ?? status;
 
-    // update status text
-    await setTextFade("statusText", statusLabel);
+    // update top-line status (fade)
+    await setTextFade("statusText", label);
 
-    // helpers to manage offline interval
+    const lastSeenEl = document.getElementById("lastSeen");
+
+    // helpers for offline interval
     function startOfflineIntervalImmediate() {
       stopOfflineInterval();
-      // set text immediately and then every second
       if (lastOnlineTimestamp) {
-        setTextNoFade("lastSeen", `Last seen ${msToHuman(Date.now() - lastOnlineTimestamp)} ago`);
+        setTextNoFade("lastSeen", `Last seen ${msToHumanShort(Date.now() - lastOnlineTimestamp)} ago`);
       } else {
         setTextNoFade("lastSeen", "Last seen unknown");
       }
       offlineInterval = setInterval(() => {
         if (!lastOnlineTimestamp) return;
-        setTextNoFade("lastSeen", `Last seen ${msToHuman(Date.now() - lastOnlineTimestamp)} ago`);
+        setTextNoFade("lastSeen", `Last seen ${msToHumanShort(Date.now() - lastOnlineTimestamp)} ago`);
       }, 1000);
     }
     function stopOfflineInterval() {
       if (offlineInterval) { clearInterval(offlineInterval); offlineInterval = null; }
     }
+    function hideLastSeenInstant() {
+      if (!lastSeenEl) return;
+      lastSeenEl.classList.add("fade-out");
+      setTimeout(() => { if (!lastSeenEl) return; lastSeenEl.classList.add("hidden"); }, 380);
+    }
 
-    const lastSeenEl = document.getElementById("lastSeen");
-
-    // -------- transition-based behavior for status text / lastSeen --------
+    // ---------- TRANSITION-BASED BEHAVIOR ----------
+    // 1) If we just transitioned into ONLINE
     if (status === "online" && lastStatus !== "online") {
       stopOfflineInterval();
-
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       await setTextFade("lastSeen", "Active now");
-
       if (lastSeenHideTimer) { clearTimeout(lastSeenHideTimer); lastSeenHideTimer = null; }
-      lastSeenHideTimer = setTimeout(() => {
-        if (!lastSeenEl) return;
-        lastSeenEl.classList.add("fade-out");
-        setTimeout(() => {
-          if (!lastSeenEl) return;
-          lastSeenEl.classList.add("hidden");
-        }, 380);
-        lastSeenHideTimer = null;
-      }, 1500);
+      lastSeenHideTimer = setTimeout(() => { hideLastSeenInstant(); lastSeenHideTimer = null; }, 1500);
 
+    // 2) If we remain online, ensure lastSeen stays hidden
     } else if (status === "online" && lastStatus === "online") {
-      // already online — ensure lastSeen stays hidden
-      if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) {
-        lastSeenEl.classList.add("fade-out");
-        setTimeout(() => {
-          if (!lastSeenEl) return;
-          lastSeenEl.classList.add("hidden");
-        }, 380);
-      }
       stopOfflineInterval();
+      if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
 
+    // 3) If we just transitioned into IDLE -> show once then hide and keep hidden
     } else if (status === "idle" && lastStatus !== "idle") {
       stopOfflineInterval();
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       await setTextFade("lastSeen", "Away now");
+      if (lastSeenHideTimer) { clearTimeout(lastSeenHideTimer); lastSeenHideTimer = null; }
+      lastSeenHideTimer = setTimeout(() => { hideLastSeenInstant(); lastSeenHideTimer = null; }, 1500);
 
+    // 4) Remain idle -> ensure hidden
+    } else if (status === "idle" && lastStatus === "idle") {
+      stopOfflineInterval();
+      if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
+
+    // 5) If we just transitioned into DND -> show once then hide and keep hidden
     } else if (status === "dnd" && lastStatus !== "dnd") {
       stopOfflineInterval();
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       await setTextFade("lastSeen", "Do not disturb");
+      if (lastSeenHideTimer) { clearTimeout(lastSeenHideTimer); lastSeenHideTimer = null; }
+      lastSeenHideTimer = setTimeout(() => { hideLastSeenInstant(); lastSeenHideTimer = null; }, 1500);
 
+    // 6) Remain DND -> ensure hidden
+    } else if (status === "dnd" && lastStatus === "dnd") {
+      stopOfflineInterval();
+      if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
+
+    // 7) Transitioned to OFFLINE -> show last seen and start updating
     } else if (status === "offline" && lastStatus !== "offline") {
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       startOfflineIntervalImmediate();
+
+    // 8) no transition: keep intervals consistent
     } else {
       if (status === "offline") {
         if (!offlineInterval) startOfflineIntervalImmediate();
@@ -136,21 +144,20 @@ async function run() {
     const contactBtn = document.getElementById("contactBtn");
     if (contactBtn) contactBtn.href = `https://discord.com/users/${USER_ID}`;
 
-    // spotify detection: prefer top-level data.spotify, otherwise look through activities
+    // spotify (best-effort same handler as before)
     const spotify = data.spotify || (Array.isArray(data.activities) ? data.activities.find(a => a.name === "Spotify") : null);
     await renderSpotifyImproved(spotify);
 
-    // store lastStatus
     lastStatus = status;
-
     document.body.classList.remove("loading");
+
   } catch (err) {
-    console.error("run error:", err);
+    console.error(err);
     document.body.classList.remove("loading");
   }
 }
 
-/* ---------- Fade & text helpers ---------- */
+/* ---------- Fade & small helpers ---------- */
 function setTextNoFade(id, text) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -161,27 +168,23 @@ function setTextFade(id, text) {
   if (!el) return Promise.resolve();
   el._fadeToken = (el._fadeToken || 0) + 1;
   const token = el._fadeToken;
-
   if (el.textContent === text) {
     el.classList.remove("fade-out");
     return Promise.resolve();
   }
-
   return new Promise(resolve => {
     el.classList.add("fade-out");
     setTimeout(() => {
       if (el._fadeToken !== token) return resolve();
       el.textContent = text;
       el.classList.remove("fade-out");
-      setTimeout(() => {
-        if (el._fadeToken !== token) return resolve();
-        resolve();
-      }, 380);
+      setTimeout(() => { if (el._fadeToken !== token) return resolve(); resolve(); }, 380);
     }, 220);
   });
 }
 
-/* ---------- DOM helpers / utilities (avatars, badges, spotify) ---------- */
+/* ---------- Avatar / badges / spotify helpers (same as earlier improved version) ---------- */
+
 function setText(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
 function setImg(id, src) { const el = document.getElementById(id); if (el && src) el.src = src; }
 
@@ -197,7 +200,7 @@ function buildBanner(user) {
   const ext = user.banner.startsWith("a_") ? "gif" : "png";
   return `https://cdn.discordapp.com/banners/${user.id}/${user.banner}.${ext}?size=1024`;
 }
-function msToHuman(ms) {
+function msToHumanShort(ms) {
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
@@ -217,16 +220,12 @@ function setStatusDot(status) {
   dot.className = `status-dot status-${cls}`;
 }
 
-/* ---------- badges ---------- */
+/* ---------- badges (simple) ---------- */
 function badgeDefs() {
   return [
     {bit:1, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 15 9l7 .6-5 4 1 7L12 17 6.9 18 8 11l-5-4 7-.6L12 2z"/></svg>`},
     {bit:2, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l2.9 6 6.6.6-4.8 3.9 1.2 6.5L12 17l-7.9 2 1.2-6.5L.5 8.6l6.6-.6L12 2z"/></svg>`},
-    {bit:4, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l9 4-9 4-9-4 9-4zm0 12l9 4-9 4-9-4 9-4z"/></svg>`},
-    {bit:8, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a6 6 0 016 6v2h2v2h-2v2a6 6 0 01-6 6 6 6 0 01-6-6v-2H4v-2h2V8a6 6 0 016-6z"/></svg>`},
-    {bit:512, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l3 7h7l-5.6 4.1L20 22l-8-5-8 5 1.6-8.9L0 9h7l3-7z"/></svg>`},
-    {bit:16384, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a6 6 0 016 6v2h2v2h-2v2a6 6 0 01-6 6 6 6 0 01-6-6v-2H4v-2h2V8a6 6 0 016-6z"/></svg>`},
-    {bit:65536, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a3 3 0 013 3v1h3v2H6V6h3V5a3 3 0 013-3zM6 10h12v8a2 2 0 01-2 2H8a2 2 0 01-2-2v-8z"/></svg>`},
+    {bit:4, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l9 4-9 4-9-4 9-4zm0 12l9 4-9 4-9-4 9-4z"/></svg>`}
   ];
 }
 function renderBadges(user) {
@@ -247,7 +246,7 @@ function renderBadges(user) {
   });
 }
 
-/* ---------- Improved Spotify rendering ---------- */
+/* ---------- Improved Spotify rendering (same as previous improved function) ---------- */
 async function renderSpotifyImproved(spotify) {
   const spBox = document.getElementById("spotify");
   const albumArt = document.getElementById("albumArt");
@@ -257,7 +256,6 @@ async function renderSpotifyImproved(spotify) {
   const timeCur = document.getElementById("timeCurrent");
   const timeTot = document.getElementById("timeTotal");
 
-  // clear previous ticker always (we'll restart if needed)
   if (spotifyTicker) { clearInterval(spotifyTicker); spotifyTicker = null; }
 
   if (!spotify) {
@@ -269,7 +267,6 @@ async function renderSpotifyImproved(spotify) {
     return;
   }
 
-  // compute a robust track id (fall back to combination if none present)
   const trackId =
     spotify.track_id
     ?? spotify.sync_id
@@ -278,34 +275,24 @@ async function renderSpotifyImproved(spotify) {
     ?? (spotify.assets?.large_image || null)
     ?? `${spotify.details || ""}::${spotify.state || ""}`;
 
-  // If track didn't change, but timestamps progressed, we'll still update progress.
   const isSameTrack = (trackId && previousSpotifyId === trackId);
 
-  // If new track (or previously null), update immediately and restart ticker
   if (!isSameTrack) {
     previousSpotifyId = trackId;
-    // show spotify box
     if (spBox) spBox.classList.remove("hidden");
 
     const isTop = !!(spotify.track_id || spotify.album);
-    const art = isTop ? (spotify.album_art_url || null) : (spotify.assets?.large_image ? `https://i.scdn.co/image/${spotify.assets.large_image.replace("spotify:","")}` : null);
-    const song = isTop ? (spotify.song || spotify.details || "") : (spotify.details || "");
-    const artist = isTop ? (spotify.artist || spotify.state || "") : (spotify.state || "");
+    const art = isTop ? spotify.album_art_url : (spotify.assets?.large_image ? `https://i.scdn.co/image/${spotify.assets.large_image.replace("spotify:","")}` : "");
+    const song = isTop ? spotify.song || spotify.details : spotify.details;
+    const artist = isTop ? spotify.artist || spotify.state : spotify.state;
 
-    // update text immediately
-    if (songEl) songEl.textContent = song;
-    if (artistEl) artistEl.textContent = artist;
-
-    // force-reload album art to avoid caching stale image
+    if (songEl) songEl.textContent = song || "";
+    if (artistEl) artistEl.textContent = artist || "";
     if (albumArt && art) {
-      // append a tiny cache-buster
       albumArt.crossOrigin = "Anonymous";
       albumArt.src = `${art}${art.includes('?') ? '&' : '?'}_=${Date.now()}`;
-    } else if (albumArt) {
-      albumArt.src = "";
-    }
+    } else if (albumArt) albumArt.src = "";
 
-    // set progress bar color asynchronously
     (async () => {
       if (!progressFill) return;
       const color = await sampleColor(art);
@@ -313,18 +300,16 @@ async function renderSpotifyImproved(spotify) {
       else progressFill.style.background = `linear-gradient(90deg,#1db954,#6be38b)`;
     })();
 
-    // start ticker if timestamps exist
     const start = spotify.timestamps?.start ?? null;
     const end = spotify.timestamps?.end ?? null;
 
     if (start && end && end > start && progressFill) {
       const total = end - start;
-      const MIN = 8; // minimum visible percent for very short songs
+      const MIN = 8;
       const tick = () => {
         const now = Date.now();
         let raw = now - start;
         if (raw < 0) raw = 0;
-        // handle repeats by modulo total (keeps filling during repeat)
         let elapsed = (total > 0) ? (raw % total) : raw;
         if (elapsed < 0) elapsed = 0;
         const pct = (elapsed / total) * 100;
@@ -333,52 +318,42 @@ async function renderSpotifyImproved(spotify) {
         if (timeCur) timeCur.textContent = msToMMSS(elapsed);
         if (timeTot) timeTot.textContent = msToMMSS(total);
       };
-      tick(); // immediate update
+      tick();
       spotifyTicker = setInterval(tick, 1000);
     } else {
-      // no timestamps — show placeholder
       if (progressFill) progressFill.style.width = "20%";
       if (timeCur) timeCur.textContent = "0:00";
       if (timeTot) timeTot.textContent = "—";
     }
-
     return;
   }
 
-  // If same track as before, still update progress once (no restart)
+  // same track — do a single progress update and ensure ticker exists
   const start = spotify.timestamps?.start ?? null;
   const end = spotify.timestamps?.end ?? null;
+  const progressFill = document.getElementById("progressFill");
   if (start && end && end > start && progressFill) {
-    // one-off update (and restart ticker to ensure it's running)
-    const total = end - start;
-    const MIN = 8;
+    const total = end - start; const MIN = 8;
     const now = Date.now();
-    let raw = now - start;
-    if (raw < 0) raw = 0;
+    let raw = now - start; if (raw < 0) raw = 0;
     let elapsed = (total > 0) ? (raw % total) : raw;
     const pct = (elapsed / total) * 100;
-    const visible = Math.max(pct, MIN);
-    progressFill.style.width = `${visible}%`;
-    if (timeCur) timeCur.textContent = msToMMSS(elapsed);
-    if (timeTot) timeTot.textContent = msToMMSS(total);
-
-    // ensure ticker exists
+    progressFill.style.width = `${Math.max(pct, MIN)}%`;
+    document.getElementById("timeCurrent").textContent = msToMMSS(elapsed);
+    document.getElementById("timeTotal").textContent = msToMMSS(total);
     if (!spotifyTicker) {
       spotifyTicker = setInterval(() => {
         const now2 = Date.now();
-        let raw2 = now2 - start;
-        if (raw2 < 0) raw2 = 0;
+        let raw2 = now2 - start; if (raw2 < 0) raw2 = 0;
         let elapsed2 = (total > 0) ? (raw2 % total) : raw2;
-        const pct2 = (elapsed2 / total) * 100;
-        progressFill.style.width = `${Math.max(pct2, MIN)}%`;
-        if (timeCur) timeCur.textContent = msToMMSS(elapsed2);
-        if (timeTot) timeTot.textContent = msToMMSS(total);
+        progressFill.style.width = `${Math.max((elapsed2/total)*100, MIN)}%`;
+        document.getElementById("timeCurrent").textContent = msToMMSS(elapsed2);
       }, 1000);
     }
   }
 }
 
-/* sample center color — returns 'rgb(r,g,b)' or null */
+/* sample color */
 async function sampleColor(url) {
   if (!url) return null;
   return new Promise(resolve => {
@@ -407,7 +382,6 @@ async function sampleColor(url) {
   });
 }
 
-/* utilities */
 function msToMMSS(ms) {
   const s = Math.floor(ms / 1000);
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
