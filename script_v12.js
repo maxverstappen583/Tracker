@@ -1,26 +1,31 @@
-// script_v12.js — Lanyard UI updater: last-seen auto-fades away shortly after coming Online
+// script_v12.js — improved last-seen and status logic
+// - lastOnlineTimestamp records the last time Lanyard reported the user NOT offline
+// - when user goes offline we show "Offline for X" using that timestamp (if available)
+// - when user comes online we show "Active now" briefly then hide it and keep it hidden
+// - while online we won't re-show last-seen repeatedly
+// - fade behavior uses setTextFade (already present in your system)
 
 const USER_ID = "1319292111325106296";
-let lastOnline = Date.now();
 let spotifyTicker = null;
+let lastOnlineTimestamp = null; // when we last observed the user not-offline
 let lastSeenHideTimer = null;
+let hideWhileOnline = false;    // when true, keep last-seen hidden while online
+let lastStatus = null;          // previous status to detect transitions
 
 document.addEventListener("DOMContentLoaded", () => {
   run();
   setInterval(run, 4000);
 });
 
-// main runner
 async function run() {
   try {
     const res = await fetch(`https://api.lanyard.rest/v1/users/${USER_ID}`, { cache: "no-store" });
     if (!res.ok) return;
     const j = await res.json();
     if (!j.success) return;
-
     const data = j.data;
 
-    // user
+    // user info
     const user = data.discord_user || {};
     setText("username", user.global_name || user.username || "Unknown");
     setImg("avatar", buildAvatar(user));
@@ -38,73 +43,87 @@ async function run() {
     // badges
     renderBadges(user);
 
-    // status / last seen — mapping for online / idle / dnd / offline / invisible
+    // compute status (treat invisible as offline for display)
     const rawStatus = (data.discord_status || "offline").toLowerCase();
-    const status = rawStatus === "invisible" ? "offline" : rawStatus; // optional treatment of invisible
+    const status = rawStatus === "invisible" ? "offline" : rawStatus;
 
-    const statusMap = {
-      online: "Online",
-      idle: "Away",
-      dnd: "Do not disturb",
-      offline: "Offline"
-    };
+    // if user is not offline, update the lastOnlineTimestamp (we observed them active now)
+    if (status !== "offline") {
+      lastOnlineTimestamp = Date.now();
+    }
 
-    // update statusText with fade
-    const statusLabel = statusMap[status] ?? status;
-    await setTextFade("statusText", statusLabel);
+    // human label
+    const statusMap = { online: "Online", idle: "Away", dnd: "Do not disturb", offline: "Offline" };
+    const label = statusMap[status] ?? status;
+    // update visible status text (fade in/out)
+    await setTextFade("statusText", label);
 
-    // handle last-seen behaviour:
-    // - For online: show "Active now" briefly then fade the element away
-    // - For idle/dnd/offline: show the relevant text and ensure element is visible
+    // ----- last-seen logic -----
+    // clear any pending hide timer when status changes away from online
+    if (status !== "online" && lastSeenHideTimer) {
+      clearTimeout(lastSeenHideTimer);
+      lastSeenHideTimer = null;
+    }
+
+    // ensure lastSeen element exists
     const lastSeenEl = document.getElementById("lastSeen");
-    // clear any existing hide timer
-    if (lastSeenHideTimer) { clearTimeout(lastSeenHideTimer); lastSeenHideTimer = null; }
+    if (!lastSeenEl) {
+      // still proceed with other updates
+    }
 
     if (status === "online") {
-      // ensure visible, set text, then schedule fade-out
-      if (lastSeenEl) {
-        lastSeenEl.classList.remove("hidden");
-        lastSeenEl.classList.remove("fade-out");
-      }
-      await setTextFade("lastSeen", "Active now");
+      // If we have not already hidden while online, show Active now briefly then hide and set flag.
+      if (!hideWhileOnline) {
+        // show (ensure visible)
+        if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
+        await setTextFade("lastSeen", "Active now");
 
-      // schedule fade after a short visible period
-      lastSeenHideTimer = setTimeout(() => {
-        if (!lastSeenEl) return;
-        // fade out then hide after transition
-        lastSeenEl.classList.add("fade-out");
-        setTimeout(() => {
-          lastSeenEl.classList.add("hidden");
-        }, 380); // match CSS transition
-      }, 1500); // visible for 1.5s
+        // schedule hide after visible duration
+        lastSeenHideTimer = setTimeout(() => {
+          if (!lastSeenEl) return;
+          lastSeenEl.classList.add("fade-out");
+          setTimeout(() => {
+            if (!lastSeenEl) return;
+            lastSeenEl.classList.add("hidden");
+          }, 380);
+          lastSeenHideTimer = null;
+          hideWhileOnline = true; // keep it hidden while we remain online
+        }, 1500); // visible for 1.5s (changeable)
+      }
+      // If already hiddenWhileOnline, do nothing — keep hidden until status changes
     } else if (status === "idle") {
-      // ensure visible and show "Away now"
+      // Bring last-seen back and show "Away now"
+      hideWhileOnline = false;
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       await setTextFade("lastSeen", "Away now");
     } else if (status === "dnd") {
+      hideWhileOnline = false;
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       await setTextFade("lastSeen", "Do not disturb");
     } else { // offline
+      hideWhileOnline = false;
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
-      const diff = lastOnline ? (Date.now() - lastOnline) : 0;
-      await setTextFade("lastSeen", lastOnline ? `Offline for ${msToHuman(diff)}` : "Offline");
+      if (lastOnlineTimestamp) {
+        const diff = Date.now() - lastOnlineTimestamp;
+        await setTextFade("lastSeen", `Offline for ${msToHuman(diff)}`);
+      } else {
+        await setTextFade("lastSeen", "Offline");
+      }
     }
 
     // update status dot
     setStatusDot(status);
 
-    // if user is not offline, update lastOnline timestamp
-    if (status !== "offline") lastOnline = Date.now();
-
     // contact link
     const contactBtn = document.getElementById("contactBtn");
     if (contactBtn) contactBtn.href = `https://discord.com/users/${USER_ID}`;
 
-    // Spotify (try data.spotify first, then activity)
+    // Spotify (top-level or activity)
     const spotify = data.spotify || (Array.isArray(data.activities) ? data.activities.find(a => a.name === "Spotify") : null);
     await renderSpotifySafe(spotify);
 
     document.body.classList.remove("loading");
+    lastStatus = status;
 
   } catch (err) {
     console.error(err);
@@ -122,6 +141,7 @@ function setTextFade(id, text) {
   el._fadeToken = (el._fadeToken || 0) + 1;
   const token = el._fadeToken;
 
+  // If text unchanged, ensure visible and return
   if (el.textContent === text) {
     el.classList.remove("fade-out");
     return Promise.resolve();
@@ -141,21 +161,25 @@ function setTextFade(id, text) {
   });
 }
 
-/* helpers */
+/* ---------- Helpers & existing functions (unchanged) ---------- */
+
 function setText(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
 function setImg(id, src) { const el = document.getElementById(id); if (el && src) el.src = src; }
+
 function buildAvatar(user) {
   if (!user) return "";
   if (!user.avatar) return `https://cdn.discordapp.com/embed/avatars/${Number(user.id || USER_ID) % 5}.png`;
   const ext = user.avatar.startsWith("a_") ? "gif" : "png";
   return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=512`;
 }
+
 function buildBanner(user) {
   if (!user) return "";
   if (!user.banner) return "";
   const ext = user.banner.startsWith("a_") ? "gif" : "png";
   return `https://cdn.discordapp.com/banners/${user.id}/${user.banner}.${ext}?size=1024`;
 }
+
 function msToHuman(ms) {
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
@@ -163,7 +187,6 @@ function msToHuman(ms) {
   return `${Math.floor(s/3600)}h`;
 }
 
-/* status dot */
 function setStatusDot(status) {
   const dot = document.getElementById("statusDot");
   if (!dot) return;
@@ -184,6 +207,7 @@ function badgeDefs() {
     {bit:65536, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a3 3 0 013 3v1h3v2H6V6h3V5a3 3 0 013-3zM6 10h12v8a2 2 0 01-2 2H8a2 2 0 01-2-2v-8z"/></svg>`},
   ];
 }
+
 function renderBadges(user) {
   const container = document.getElementById("badges");
   if (!container) return;
@@ -202,7 +226,7 @@ function renderBadges(user) {
   });
 }
 
-/* SPOTIFY rendering — safe and repeat-aware */
+/* SPOTIFY rendering — unchanged from earlier (keeps safe handling) */
 async function renderSpotifySafe(spotify) {
   const spBox = document.getElementById("spotify");
   const albumArt = document.getElementById("albumArt");
@@ -222,7 +246,6 @@ async function renderSpotifySafe(spotify) {
     return;
   }
 
-  // normalize
   const isTop = !!(spotify.track_id || spotify.album);
   const start = spotify.timestamps?.start ?? null;
   const end = spotify.timestamps?.end ?? null;
