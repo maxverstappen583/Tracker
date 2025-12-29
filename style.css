@@ -64,7 +64,7 @@ html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,
 .status-box {
   display: flex;
   flex-direction: column; /* ensures last-seen is on the next line */
-  align-items: flex-start; /* left align under username */
+  align-items: flex-start; /* left align under the username */
   gap: 6px;
   margin-top: 4px;
 }
