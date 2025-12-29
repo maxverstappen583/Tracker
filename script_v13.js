@@ -1,187 +1,46 @@
-/* script_v13.js — Polling (REST) Lanyard client with transition-based last-seen
-   - Shows Active/Away/DND once on transition and hides while status unchanged
-   - Shows "Last seen X ago" while offline (updated every second)
-   - Safer fetch with timeout so the page won't hang on loading
-   - Improved Spotify update handling (REST-limited)
+/* script_ws.js — Lanyard WebSocket client (instant presence + Spotify)
+   - Subscribe to a user via wss://api.lanyard.rest/socket (op 2)
+   - Transition-based "Active/Away/DND" shown once then fade+hide while status unchanged
+   - Offline: "Last seen X ago" updates every second
+   - Spotify: instant updates, progress bar, album-art color sampling
+   - Reconnect backoff on close/error
 */
 
 const USER_ID = "1319292111325106296";
-const POLL_MS = 4000;
-const FETCH_TIMEOUT_MS = 8000;
+const SOCKET_URL = "wss://api.lanyard.rest/socket";
 
-let offlineInterval = null;
-let lastOnlineTimestamp = null;
-let lastSeenHideTimer = null;
+let ws = null;
+let reconnectTimer = null;
+let reconnectDelay = 1000;
 let lastStatus = null;
+let lastOnlineTimestamp = null;
+let lastSeenInterval = null;
+let lastSeenHideTimer = null;
 let spotifyTicker = null;
 let previousSpotifyId = null;
 
-document.addEventListener("DOMContentLoaded", () => {
-  // initial safe state so page doesn't appear stuck
-  document.body.classList.remove('loading');
-  run();
-  setInterval(run, POLL_MS);
-});
+// DOM refs
+const statusTextEl = document.getElementById("statusText");
+const lastSeenEl = document.getElementById("lastSeen");
+const avatarEl = document.getElementById("avatar");
+const heroAvatarEl = document.getElementById("heroAvatar");
+const usernameEl = document.getElementById("username");
+const statusDotEl = document.getElementById("statusDot");
+const contactBtn = document.getElementById("contactBtn");
+const badgesContainer = document.getElementById("badges");
+const bannerWrap = document.getElementById("bannerWrap");
+const bannerImg = document.getElementById("bannerImg");
 
-async function run() {
-  try {
-    const j = await fetchWithTimeout(`https://api.lanyard.rest/v1/users/${USER_ID}`, FETCH_TIMEOUT_MS);
-    if (!j || !j.success || !j.data) {
-      // ensure UI doesn't stay stuck
-      document.body.classList.remove('loading');
-      return;
-    }
-    const data = j.data;
+// spotify refs
+const spotifyBox = document.getElementById("spotify");
+const songEl = document.getElementById("song");
+const artistEl = document.getElementById("artist");
+const albumArtEl = document.getElementById("albumArt");
+const progressFillEl = document.getElementById("progressFill");
+const timeCurrentEl = document.getElementById("timeCurrent");
+const timeTotalEl = document.getElementById("timeTotal");
 
-    // --- user / avatar / banner ---
-    const user = data.discord_user || {};
-    setText("username", user.global_name || user.username || "Unknown");
-    setImg("avatar", buildAvatar(user));
-    setImg("heroAvatar", buildAvatar(user));
-
-    const bannerUrl = buildBanner(user);
-    const bannerWrap = document.getElementById("bannerWrap");
-    const bannerImg = document.getElementById("bannerImg");
-    if (bannerWrap && bannerImg) {
-      if (bannerUrl) { bannerWrap.classList.remove("hidden"); bannerImg.src = bannerUrl; }
-      else { bannerWrap.classList.add("hidden"); bannerImg.src = ""; }
-    }
-
-    renderBadges(user);
-
-    // --- status / last-seen logic ---
-    const rawStatus = (data.discord_status || "offline").toLowerCase();
-    const status = rawStatus === "invisible" ? "offline" : rawStatus;
-
-    // update lastOnlineTimestamp when we see them active (not offline)
-    if (status !== "offline") lastOnlineTimestamp = Date.now();
-
-    const statusMap = { online: "Online", idle: "Away", dnd: "Do not disturb", offline: "Offline" };
-    const label = statusMap[status] ?? status;
-
-    // update top-line status
-    await setTextFade("statusText", label);
-
-    const lastSeenEl = document.getElementById("lastSeen");
-
-    // offline interval helpers
-    function startOfflineIntervalImmediate() {
-      stopOfflineInterval();
-      if (lastOnlineTimestamp) {
-        setTextNoFade("lastSeen", `Last seen ${msToHumanShort(Date.now() - lastOnlineTimestamp)} ago`);
-      } else {
-        setTextNoFade("lastSeen", "Last seen unknown");
-      }
-      offlineInterval = setInterval(() => {
-        if (!lastOnlineTimestamp) return;
-        setTextNoFade("lastSeen", `Last seen ${msToHumanShort(Date.now() - lastOnlineTimestamp)} ago`);
-      }, 1000);
-    }
-    function stopOfflineInterval() {
-      if (offlineInterval) { clearInterval(offlineInterval); offlineInterval = null; }
-    }
-    function hideLastSeenInstant() {
-      if (!lastSeenEl) return;
-      lastSeenEl.classList.add("fade-out");
-      setTimeout(() => { if (!lastSeenEl) return; lastSeenEl.classList.add("hidden"); }, 380);
-    }
-
-    // ---------- transition-based behavior ----------
-    if (status === "online" && lastStatus !== "online") {
-      stopOfflineInterval();
-      if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
-      await setTextFade("lastSeen", "Active now");
-      if (lastSeenHideTimer) { clearTimeout(lastSeenHideTimer); lastSeenHideTimer = null; }
-      lastSeenHideTimer = setTimeout(() => { hideLastSeenInstant(); lastSeenHideTimer = null; }, 1500);
-
-    } else if (status === "online" && lastStatus === "online") {
-      stopOfflineInterval();
-      if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
-
-    } else if (status === "idle" && lastStatus !== "idle") {
-      stopOfflineInterval();
-      if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
-      await setTextFade("lastSeen", "Away now");
-      if (lastSeenHideTimer) { clearTimeout(lastSeenHideTimer); lastSeenHideTimer = null; }
-      lastSeenHideTimer = setTimeout(() => { hideLastSeenInstant(); lastSeenHideTimer = null; }, 1500);
-
-    } else if (status === "idle" && lastStatus === "idle") {
-      stopOfflineInterval();
-      if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
-
-    } else if (status === "dnd" && lastStatus !== "dnd") {
-      stopOfflineInterval();
-      if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
-      await setTextFade("lastSeen", "Do not disturb");
-      if (lastSeenHideTimer) { clearTimeout(lastSeenHideTimer); lastSeenHideTimer = null; }
-      lastSeenHideTimer = setTimeout(() => { hideLastSeenInstant(); lastSeenHideTimer = null; }, 1500);
-
-    } else if (status === "dnd" && lastStatus === "dnd") {
-      stopOfflineInterval();
-      if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
-
-    } else if (status === "offline" && lastStatus !== "offline") {
-      if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
-      startOfflineIntervalImmediate();
-
-    } else {
-      // keep consistent intervals
-      if (status === "offline") {
-        if (!offlineInterval) startOfflineIntervalImmediate();
-      } else {
-        stopOfflineInterval();
-      }
-    }
-
-    // update status dot
-    setStatusDot(status);
-
-    // contact link
-    const contactBtn = document.getElementById("contactBtn");
-    if (contactBtn) contactBtn.href = `https://discord.com/users/${USER_ID}`;
-
-    // --- spotify (best-effort) ---
-    const spotify = data.spotify || (Array.isArray(data.activities) ? data.activities.find(a => a.name === "Spotify") : null);
-    await renderSpotifyImproved(spotify);
-
-    // store lastStatus
-    lastStatus = status;
-
-    // remove loading class (defensive)
-    document.body.classList.remove('loading');
-
-  } catch (err) {
-    console.error("Lanyard polling error:", err);
-    // ensure we don't stay stuck on loading if fetch fails
-    document.body.classList.remove('loading');
-    // clear spotify ticker on errors to avoid ghost timers
-    if (spotifyTicker) { clearInterval(spotifyTicker); spotifyTicker = null; }
-  }
-}
-
-/* ---------- fetch with timeout ---------- */
-function fetchWithTimeout(url, ms = 8000) {
-  return new Promise((resolve, reject) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      controller.abort();
-      reject(new Error("fetch timeout"));
-    }, ms);
-
-    fetch(url, { signal: controller.signal, cache: "no-store" })
-      .then(r => r.json())
-      .then(json => {
-        clearTimeout(timer);
-        resolve(json);
-      })
-      .catch(err => {
-        clearTimeout(timer);
-        reject(err);
-      });
-  });
-}
-
-/* ---------- Fade & DOM helpers ---------- */
+/* utility: fade text with token to avoid race */
 function setTextNoFade(id, text) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -192,29 +51,70 @@ function setTextFade(id, text) {
   if (!el) return Promise.resolve();
   el._fadeToken = (el._fadeToken || 0) + 1;
   const token = el._fadeToken;
-
   if (el.textContent === text) {
     el.classList.remove("fade-out");
     return Promise.resolve();
   }
-
-  return new Promise(resolve => {
+  return new Promise(res => {
     el.classList.add("fade-out");
     setTimeout(() => {
-      if (el._fadeToken !== token) return resolve();
+      if (el._fadeToken !== token) return res();
       el.textContent = text;
       el.classList.remove("fade-out");
       setTimeout(() => {
-        if (el._fadeToken !== token) return resolve();
-        resolve();
+        if (el._fadeToken !== token) return res();
+        res();
       }, 380);
     }, 220);
   });
 }
-function setText(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
-function setImg(id, src) { const el = document.getElementById(id); if (el && src) el.src = src; }
 
-/* ---------- avatar/banner/badges ---------- */
+/* short humanizer for last seen */
+function msToHumanShort(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  return `${d}d`;
+}
+
+/* status dot */
+function setStatusDot(status) {
+  if (!statusDotEl) return;
+  const allowed = ["online","idle","dnd","offline"];
+  const cls = allowed.includes(status) ? status : "offline";
+  statusDotEl.className = `status-dot status-${cls}`;
+}
+
+/* badge rendering (basic placeholders) */
+function badgeDefs() {
+  return [
+    {bit:1, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 15 9l7 .6-5 4 1 7L12 17 6.9 18 8 11l-5-4 7-.6L12 2z"/></svg>`},
+    {bit:2, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l2.9 6 6.6.6-4.8 3.9 1.2 6.5L12 17l-7.9 2 1.2-6.5L.5 8.6l6.6-.6L12 2z"/></svg>`},
+    {bit:4, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l9 4-9 4-9-4 9-4zm0 12l9 4-9 4-9-4 9-4z"/></svg>`}
+  ];
+}
+function renderBadges(user) {
+  if (!badgesContainer) return;
+  badgesContainer.innerHTML = "";
+  const flags = (user && (user.public_flags ?? user.flags)) ?? 0;
+  const defs = badgeDefs();
+  const found = defs.filter(d => (Number(flags) & d.bit) === d.bit);
+  if (!found.length) { badgesContainer.style.display = "none"; return; }
+  badgesContainer.style.display = "flex";
+  found.forEach((b, i) => {
+    const s = document.createElement("span");
+    s.className = "badge-icon";
+    s.innerHTML = b.svg;
+    badgesContainer.appendChild(s);
+    setTimeout(() => s.classList.add("show"), i * 90);
+  });
+}
+
+/* avatar / banner helpers */
 function buildAvatar(user) {
   if (!user) return "";
   if (!user.avatar) return `https://cdn.discordapp.com/embed/avatars/${Number(user.id || USER_ID) % 5}.png`;
@@ -227,113 +127,77 @@ function buildBanner(user) {
   const ext = user.banner.startsWith("a_") ? "gif" : "png";
   return `https://cdn.discordapp.com/banners/${user.id}/${user.banner}.${ext}?size=1024`;
 }
-function msToHumanShort(ms) {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  return `${d}d`;
+
+/* last-seen interval management */
+function startLastSeenInterval() {
+  stopLastSeenInterval();
+  if (!lastOnlineTimestamp) {
+    setTextNoFade("lastSeen", "Last seen unknown");
+  } else {
+    setTextNoFade("lastSeen", `Last seen ${msToHumanShort(Date.now() - lastOnlineTimestamp)} ago`);
+  }
+  lastSeenInterval = setInterval(() => {
+    if (!lastOnlineTimestamp) return;
+    setTextNoFade("lastSeen", `Last seen ${msToHumanShort(Date.now() - lastOnlineTimestamp)} ago`);
+  }, 1000);
+}
+function stopLastSeenInterval() {
+  if (lastSeenInterval) { clearInterval(lastSeenInterval); lastSeenInterval = null; }
+}
+function hideLastSeenInstant() {
+  if (!lastSeenEl) return;
+  lastSeenEl.classList.add("fade-out");
+  setTimeout(() => { if (!lastSeenEl) return; lastSeenEl.classList.add("hidden"); }, 380);
 }
 
-/* ---------- status dot ---------- */
-function setStatusDot(status) {
-  const dot = document.getElementById("statusDot");
-  if (!dot) return;
-  const allowed = ["online","idle","dnd","offline"];
-  const cls = allowed.includes(status) ? status : "offline";
-  dot.className = `status-dot status-${cls}`;
-}
-
-/* ---------- simple badges ---------- */
-function badgeDefs() {
-  return [
-    {bit:1, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 15 9l7 .6-5 4 1 7L12 17 6.9 18 8 11l-5-4 7-.6L12 2z"/></svg>`},
-    {bit:2, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l2.9 6 6.6.6-4.8 3.9 1.2 6.5L12 17l-7.9 2 1.2-6.5L.5 8.6l6.6-.6L12 2z"/></svg>`},
-    {bit:4, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l9 4-9 4-9-4 9-4zm0 12l9 4-9 4-9-4 9-4z"/></svg>`}
-  ];
-}
-function renderBadges(user) {
-  const container = document.getElementById("badges");
-  if (!container) return;
-  container.innerHTML = "";
-  const flags = (user && (user.public_flags ?? user.flags)) ?? 0;
-  const defs = badgeDefs();
-  const found = defs.filter(d => (Number(flags) & d.bit) === d.bit);
-  if (!found.length) { container.style.display = "none"; return; }
-  container.style.display = "flex";
-  found.forEach((b, i) => {
-    const s = document.createElement("span");
-    s.className = "badge-icon";
-    s.innerHTML = b.svg;
-    container.appendChild(s);
-    setTimeout(() => s.classList.add("show"), i * 90);
-  });
-}
-
-/* ---------- Improved Spotify rendering (best-effort with REST) ---------- */
-async function renderSpotifyImproved(spotify) {
-  const spBox = document.getElementById("spotify");
-  const albumArt = document.getElementById("albumArt");
-  const songEl = document.getElementById("song");
-  const artistEl = document.getElementById("artist");
-  const progressFill = document.getElementById("progressFill");
-  const timeCur = document.getElementById("timeCurrent");
-  const timeTot = document.getElementById("timeTotal");
-
-  // clear previous ticker always
+/* spotify rendering & progress */
+async function renderSpotify(spotify) {
+  // clear previous ticker
   if (spotifyTicker) { clearInterval(spotifyTicker); spotifyTicker = null; }
 
   if (!spotify) {
     previousSpotifyId = null;
-    if (spBox) spBox.classList.add("hidden");
-    if (progressFill) { progressFill.style.width = "0%"; progressFill.style.background = ""; }
-    if (timeCur) timeCur.textContent = "0:00";
-    if (timeTot) timeTot.textContent = "0:00";
+    if (spotifyBox) spotifyBox.classList.add("hidden");
+    if (progressFillEl) { progressFillEl.style.width = "0%"; progressFillEl.style.background = ""; }
+    if (timeCurrentEl) timeCurrentEl.textContent = "0:00";
+    if (timeTotalEl) timeTotalEl.textContent = "0:00";
     return;
   }
 
-  const trackId =
-    spotify.track_id
-    ?? spotify.sync_id
-    ?? spotify.party?.id
-    ?? spotify.id
-    ?? (spotify.assets?.large_image || null)
-    ?? `${spotify.details || ""}::${spotify.state || ""}`;
-
-  const isSameTrack = (trackId && previousSpotifyId === trackId);
+  // robust track id
+  const trackId = spotify.track_id ?? spotify.sync_id ?? spotify.party?.id ?? spotify.id ?? (spotify.assets?.large_image || null) ?? `${spotify.details || ""}::${spotify.state || ""}`;
+  const isNewTrack = trackId && trackId !== previousSpotifyId;
   previousSpotifyId = trackId;
 
   const isTop = !!(spotify.track_id || spotify.album);
-  const art = isTop ? spotify.album_art_url : (spotify.assets?.large_image ? `https://i.scdn.co/image/${spotify.assets.large_image.replace("spotify:","")}` : null);
-  const song = isTop ? spotify.song || spotify.details : spotify.details;
-  const artist = isTop ? spotify.artist || spotify.state : spotify.state;
+  const art = isTop ? (spotify.album_art_url || null) : (spotify.assets?.large_image ? `https://i.scdn.co/image/${spotify.assets.large_image.replace("spotify:","")}` : null);
+  const song = isTop ? (spotify.song || spotify.details || "") : (spotify.details || "");
+  const artist = isTop ? (spotify.artist || spotify.state || "") : (spotify.state || "");
 
-  if (spBox) spBox.classList.remove("hidden");
+  if (spotifyBox) spotifyBox.classList.remove("hidden");
   if (songEl) songEl.textContent = song || "";
   if (artistEl) artistEl.textContent = artist || "";
 
-  if (albumArt && art) {
-    albumArt.crossOrigin = "Anonymous";
-    albumArt.src = `${art}${art.includes('?') ? '&' : '?'}_=${Date.now()}`;
-  } else if (albumArt) {
-    albumArt.src = "";
+  if (albumArtEl) {
+    if (art) {
+      albumArtEl.crossOrigin = "Anonymous";
+      albumArtEl.src = `${art}${art.includes('?') ? '&' : '?'}_=${Date.now()}`;
+    } else {
+      albumArtEl.src = "";
+    }
   }
 
-  // set progress color
   (async () => {
-    if (!progressFill) return;
+    if (!progressFillEl) return;
     const color = await sampleColor(art);
-    if (color) progressFill.style.background = `linear-gradient(90deg, ${color}, rgba(255,255,255,0.18))`;
-    else progressFill.style.background = `linear-gradient(90deg,#1db954,#6be38b)`;
+    if (color) progressFillEl.style.background = `linear-gradient(90deg, ${color}, rgba(255,255,255,0.18))`;
+    else progressFillEl.style.background = `linear-gradient(90deg,#1db954,#6be38b)`;
   })();
 
   const start = spotify.timestamps?.start ?? null;
   const end = spotify.timestamps?.end ?? null;
 
-  if (start && end && end > start && progressFill) {
+  if (start && end && end > start && progressFillEl) {
     const total = end - start;
     const MIN = 8;
     const tick = () => {
@@ -341,19 +205,18 @@ async function renderSpotifyImproved(spotify) {
       let raw = now - start;
       if (raw < 0) raw = 0;
       let elapsed = (total > 0) ? (raw % total) : raw;
-      if (elapsed < 0) elapsed = 0;
       const pct = (elapsed / total) * 100;
       const visible = Math.max(pct, MIN);
-      progressFill.style.width = `${visible}%`;
-      if (timeCur) timeCur.textContent = msToMMSS(elapsed);
-      if (timeTot) timeTot.textContent = msToMMSS(total);
+      progressFillEl.style.width = `${visible}%`;
+      if (timeCurrentEl) timeCurrentEl.textContent = msToMMSS(elapsed);
+      if (timeTotalEl) timeTotalEl.textContent = msToMMSS(total);
     };
     tick();
     spotifyTicker = setInterval(tick, 1000);
   } else {
-    if (progressFill) progressFill.style.width = "20%";
-    if (timeCur) timeCur.textContent = "0:00";
-    if (timeTot) timeTot.textContent = "—";
+    if (progressFillEl) progressFillEl.style.width = "20%";
+    if (timeCurrentEl) timeCurrentEl.textContent = "0:00";
+    if (timeTotalEl) timeTotalEl.textContent = "—";
   }
 }
 
@@ -395,3 +258,149 @@ function msToMMSS(ms) {
   const s = Math.floor(ms / 1000);
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
 }
+
+/* handle presence update (from Lanyard payload d) */
+async function handlePresenceUpdate(data) {
+  // discord_user updates
+  if (data.discord_user) {
+    const user = data.discord_user;
+    setTextNoFade("username", user.global_name || user.username || "Unknown");
+    const avatarUrl = buildAvatar(user);
+    if (avatarEl) avatarEl.src = avatarUrl;
+    if (heroAvatarEl) heroAvatarEl.src = avatarUrl;
+    const bannerUrl = buildBanner(user);
+    if (bannerWrap && bannerImg) {
+      if (bannerUrl) { bannerWrap.classList.remove("hidden"); bannerImg.src = bannerUrl; }
+      else { bannerWrap.classList.add("hidden"); bannerImg.src = ""; }
+    }
+    renderBadges(user);
+  }
+
+  const rawStatus = (data.discord_status || "offline").toLowerCase();
+  const status = rawStatus === "invisible" ? "offline" : rawStatus;
+
+  // capture last online when not offline
+  if (status !== "offline") lastOnlineTimestamp = Date.now();
+
+  const humanMap = { online: "Online", idle: "Away", dnd: "Do not disturb", offline: "Offline" };
+  const statusLabel = humanMap[status] ?? status;
+
+  await setTextFade("statusText", statusLabel);
+
+  // transition handling: show once when transitioning into online/idle/dnd then hide and keep hidden
+  if (status === "online" && lastStatus !== "online") {
+    stopLastSeenInterval();
+    if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
+    await setTextFade("lastSeen", "Active now");
+    if (lastSeenHideTimer) clearTimeout(lastSeenHideTimer);
+    lastSeenHideTimer = setTimeout(() => { hideLastSeenInstant(); lastSeenHideTimer = null; }, 1500);
+
+  } else if (status === "online" && lastStatus === "online") {
+    stopLastSeenInterval();
+    if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
+
+  } else if (status === "idle" && lastStatus !== "idle") {
+    stopLastSeenInterval();
+    if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
+    await setTextFade("lastSeen", "Away now");
+    if (lastSeenHideTimer) clearTimeout(lastSeenHideTimer);
+    lastSeenHideTimer = setTimeout(() => { hideLastSeenInstant(); lastSeenHideTimer = null; }, 1500);
+
+  } else if (status === "idle" && lastStatus === "idle") {
+    stopLastSeenInterval();
+    if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
+
+  } else if (status === "dnd" && lastStatus !== "dnd") {
+    stopLastSeenInterval();
+    if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
+    await setTextFade("lastSeen", "Do not disturb");
+    if (lastSeenHideTimer) clearTimeout(lastSeenHideTimer);
+    lastSeenHideTimer = setTimeout(() => { hideLastSeenInstant(); lastSeenHideTimer = null; }, 1500);
+
+  } else if (status === "dnd" && lastStatus === "dnd") {
+    stopLastSeenInterval();
+    if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
+
+  } else if (status === "offline" && lastStatus !== "offline") {
+    if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
+    // show last seen and update every second
+    if (!lastOnlineTimestamp) setTextNoFade("lastSeen", "Last seen unknown");
+    else setTextNoFade("lastSeen", `Last seen ${msToHumanShort(Date.now() - lastOnlineTimestamp)} ago`);
+    startLastSeenInterval();
+
+  } else {
+    // no transition: ensure intervals consistent
+    if (status === "offline") {
+      if (!lastSeenInterval) startLastSeenInterval();
+    } else {
+      stopLastSeenInterval();
+    }
+  }
+
+  setStatusDot(status);
+
+  // contact button
+  if (contactBtn) contactBtn.href = `https://discord.com/users/${USER_ID}`;
+
+  // spotify (prefers top-level data.spotify)
+  const spotify = data.spotify || (Array.isArray(data.activities) ? data.activities.find(a => a.name === "Spotify") : null);
+  await renderSpotify(spotify);
+
+  lastStatus = status;
+
+  // remove loading
+  document.body.classList.remove("loading");
+}
+
+/* WebSocket connect + message handling */
+function connectSocket() {
+  if (ws) {
+    try { ws.close(); } catch(e) {}
+    ws = null;
+  }
+
+  ws = new WebSocket(SOCKET_URL);
+
+  ws.onopen = () => {
+    reconnectDelay = 1000;
+    ws.send(JSON.stringify({ op: 2, d: { subscribe_to_id: USER_ID } }));
+    console.info("Lanyard WS open — subscribed to", USER_ID);
+  };
+
+  ws.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (!msg || !msg.d) return;
+      // Lanyard wraps presence updates inside d
+      handlePresenceUpdate(msg.d);
+    } catch (e) {
+      console.error("WS message parse error", e);
+    }
+  };
+
+  ws.onclose = (ev) => {
+    console.warn("Lanyard WS closed", ev.code, ev.reason);
+    scheduleReconnect();
+  };
+
+  ws.onerror = (err) => {
+    console.error("Lanyard WS error", err);
+    try { ws.close(); } catch(e) {}
+  };
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    reconnectDelay = Math.min(Math.round(reconnectDelay * 1.5), 30000);
+    connectSocket();
+  }, reconnectDelay);
+}
+
+/* start on DOM ready */
+document.addEventListener("DOMContentLoaded", () => {
+  // remove loading state even if socket slower
+  document.body.classList.remove("loading");
+  connectSocket();
+});
