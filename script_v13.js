@@ -1,4 +1,7 @@
-/* script_v13.js — robust Lanyard + Spotify + status handling (transition-based) */
+/* script_v13.js — Improved Spotify update handling + robust Lanyard status
+   - Replaces previous spotify update; updates immediately when track changes
+   - Keeps the transition-based "Active now" logic and last-seen timer
+*/
 
 const USER_ID = "1319292111325106296";
 const POLL_MS = 4000;
@@ -8,6 +11,7 @@ let offlineInterval = null;
 let lastOnlineTimestamp = null; // when we last observed the user NOT offline
 let lastSeenHideTimer = null;
 let lastStatus = null; // previous status to detect transitions
+let previousSpotifyId = null; // track identifier to know when a new song started
 
 document.addEventListener("DOMContentLoaded", () => {
   run();
@@ -75,19 +79,14 @@ async function run() {
 
     const lastSeenEl = document.getElementById("lastSeen");
 
-    // -------- transition-based behavior --------
-    // If we just transitioned into ONLINE (i.e., lastStatus !== 'online' && status === 'online')
+    // -------- transition-based behavior for status text / lastSeen --------
     if (status === "online" && lastStatus !== "online") {
-      // stop offline timer
       stopOfflineInterval();
 
-      // show "Active now" once, then hide it
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       await setTextFade("lastSeen", "Active now");
 
-      // clear previous hide timer
       if (lastSeenHideTimer) { clearTimeout(lastSeenHideTimer); lastSeenHideTimer = null; }
-
       lastSeenHideTimer = setTimeout(() => {
         if (!lastSeenEl) return;
         lastSeenEl.classList.add("fade-out");
@@ -98,10 +97,8 @@ async function run() {
         lastSeenHideTimer = null;
       }, 1500);
 
-      // do NOT start offline interval; keep hidden while online until status changes
-
     } else if (status === "online" && lastStatus === "online") {
-      // already online previously — ensure lastSeen is hidden (no re-show)
+      // already online — ensure lastSeen stays hidden
       if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) {
         lastSeenEl.classList.add("fade-out");
         setTimeout(() => {
@@ -109,27 +106,22 @@ async function run() {
           lastSeenEl.classList.add("hidden");
         }, 380);
       }
-      // ensure no offline timer running
       stopOfflineInterval();
 
     } else if (status === "idle" && lastStatus !== "idle") {
-      // transitioned to idle — show "Away now" and ensure offline timer not running
       stopOfflineInterval();
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       await setTextFade("lastSeen", "Away now");
 
     } else if (status === "dnd" && lastStatus !== "dnd") {
-      // transitioned to dnd
       stopOfflineInterval();
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       await setTextFade("lastSeen", "Do not disturb");
 
     } else if (status === "offline" && lastStatus !== "offline") {
-      // transitioned to offline — show last seen using lastOnlineTimestamp and start interval
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       startOfflineIntervalImmediate();
     } else {
-      // no status transition (same status as before) — nothing to change except keep intervals consistent
       if (status === "offline") {
         if (!offlineInterval) startOfflineIntervalImmediate();
       } else {
@@ -140,20 +132,20 @@ async function run() {
     // update status dot
     setStatusDot(status);
 
-    // contact
+    // contact button
     const contactBtn = document.getElementById("contactBtn");
     if (contactBtn) contactBtn.href = `https://discord.com/users/${USER_ID}`;
 
-    // spotify
+    // spotify detection: prefer top-level data.spotify, otherwise look through activities
     const spotify = data.spotify || (Array.isArray(data.activities) ? data.activities.find(a => a.name === "Spotify") : null);
-    await renderSpotifySafe(spotify);
+    await renderSpotifyImproved(spotify);
 
-    // store status for next poll
+    // store lastStatus
     lastStatus = status;
 
     document.body.classList.remove("loading");
   } catch (err) {
-    console.error(err);
+    console.error("run error:", err);
     document.body.classList.remove("loading");
   }
 }
@@ -170,7 +162,6 @@ function setTextFade(id, text) {
   el._fadeToken = (el._fadeToken || 0) + 1;
   const token = el._fadeToken;
 
-  // if identical, keep visible and return
   if (el.textContent === text) {
     el.classList.remove("fade-out");
     return Promise.resolve();
@@ -217,7 +208,7 @@ function msToHuman(ms) {
   return `${d}d`;
 }
 
-/* status dot */
+/* ---------- status dot ---------- */
 function setStatusDot(status) {
   const dot = document.getElementById("statusDot");
   if (!dot) return;
@@ -226,7 +217,7 @@ function setStatusDot(status) {
   dot.className = `status-dot status-${cls}`;
 }
 
-/* badges */
+/* ---------- badges ---------- */
 function badgeDefs() {
   return [
     {bit:1, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 15 9l7 .6-5 4 1 7L12 17 6.9 18 8 11l-5-4 7-.6L12 2z"/></svg>`},
@@ -256,8 +247,8 @@ function renderBadges(user) {
   });
 }
 
-/* Spotify rendering (same safe handler) */
-async function renderSpotifySafe(spotify) {
+/* ---------- Improved Spotify rendering ---------- */
+async function renderSpotifyImproved(spotify) {
   const spBox = document.getElementById("spotify");
   const albumArt = document.getElementById("albumArt");
   const songEl = document.getElementById("song");
@@ -266,9 +257,11 @@ async function renderSpotifySafe(spotify) {
   const timeCur = document.getElementById("timeCurrent");
   const timeTot = document.getElementById("timeTotal");
 
+  // clear previous ticker always (we'll restart if needed)
   if (spotifyTicker) { clearInterval(spotifyTicker); spotifyTicker = null; }
 
   if (!spotify) {
+    previousSpotifyId = null;
     if (spBox) spBox.classList.add("hidden");
     if (progressFill) { progressFill.style.width = "0%"; progressFill.style.background = ""; }
     if (timeCur) timeCur.textContent = "0:00";
@@ -276,50 +269,116 @@ async function renderSpotifySafe(spotify) {
     return;
   }
 
-  const isTop = !!(spotify.track_id || spotify.album);
+  // compute a robust track id (fall back to combination if none present)
+  const trackId =
+    spotify.track_id
+    ?? spotify.sync_id
+    ?? spotify.party?.id
+    ?? spotify.id
+    ?? (spotify.assets?.large_image || null)
+    ?? `${spotify.details || ""}::${spotify.state || ""}`;
+
+  // If track didn't change, but timestamps progressed, we'll still update progress.
+  const isSameTrack = (trackId && previousSpotifyId === trackId);
+
+  // If new track (or previously null), update immediately and restart ticker
+  if (!isSameTrack) {
+    previousSpotifyId = trackId;
+    // show spotify box
+    if (spBox) spBox.classList.remove("hidden");
+
+    const isTop = !!(spotify.track_id || spotify.album);
+    const art = isTop ? (spotify.album_art_url || null) : (spotify.assets?.large_image ? `https://i.scdn.co/image/${spotify.assets.large_image.replace("spotify:","")}` : null);
+    const song = isTop ? (spotify.song || spotify.details || "") : (spotify.details || "");
+    const artist = isTop ? (spotify.artist || spotify.state || "") : (spotify.state || "");
+
+    // update text immediately
+    if (songEl) songEl.textContent = song;
+    if (artistEl) artistEl.textContent = artist;
+
+    // force-reload album art to avoid caching stale image
+    if (albumArt && art) {
+      // append a tiny cache-buster
+      albumArt.crossOrigin = "Anonymous";
+      albumArt.src = `${art}${art.includes('?') ? '&' : '?'}_=${Date.now()}`;
+    } else if (albumArt) {
+      albumArt.src = "";
+    }
+
+    // set progress bar color asynchronously
+    (async () => {
+      if (!progressFill) return;
+      const color = await sampleColor(art);
+      if (color) progressFill.style.background = `linear-gradient(90deg, ${color}, rgba(255,255,255,0.18))`;
+      else progressFill.style.background = `linear-gradient(90deg,#1db954,#6be38b)`;
+    })();
+
+    // start ticker if timestamps exist
+    const start = spotify.timestamps?.start ?? null;
+    const end = spotify.timestamps?.end ?? null;
+
+    if (start && end && end > start && progressFill) {
+      const total = end - start;
+      const MIN = 8; // minimum visible percent for very short songs
+      const tick = () => {
+        const now = Date.now();
+        let raw = now - start;
+        if (raw < 0) raw = 0;
+        // handle repeats by modulo total (keeps filling during repeat)
+        let elapsed = (total > 0) ? (raw % total) : raw;
+        if (elapsed < 0) elapsed = 0;
+        const pct = (elapsed / total) * 100;
+        const visible = Math.max(pct, MIN);
+        progressFill.style.width = `${visible}%`;
+        if (timeCur) timeCur.textContent = msToMMSS(elapsed);
+        if (timeTot) timeTot.textContent = msToMMSS(total);
+      };
+      tick(); // immediate update
+      spotifyTicker = setInterval(tick, 1000);
+    } else {
+      // no timestamps — show placeholder
+      if (progressFill) progressFill.style.width = "20%";
+      if (timeCur) timeCur.textContent = "0:00";
+      if (timeTot) timeTot.textContent = "—";
+    }
+
+    return;
+  }
+
+  // If same track as before, still update progress once (no restart)
   const start = spotify.timestamps?.start ?? null;
   const end = spotify.timestamps?.end ?? null;
-  const art = isTop ? spotify.album_art_url : (spotify.assets?.large_image ? `https://i.scdn.co/image/${spotify.assets.large_image.replace("spotify:","")}` : "");
-  const song = isTop ? spotify.song || spotify.details : spotify.details;
-  const artist = isTop ? spotify.artist || spotify.state : spotify.state;
-
-  if (spBox) spBox.classList.remove("hidden");
-  if (songEl) songEl.textContent = song || "";
-  if (artistEl) artistEl.textContent = artist || "";
-  if (albumArt && art) albumArt.src = art;
-
-  (async () => {
-    if (!progressFill) return;
-    const color = await sampleColor(art);
-    if (color) progressFill.style.background = `linear-gradient(90deg, ${color}, rgba(255,255,255,0.18))`;
-    else progressFill.style.background = `linear-gradient(90deg,#1db954,#6be38b)`;
-  })();
-
   if (start && end && end > start && progressFill) {
+    // one-off update (and restart ticker to ensure it's running)
     const total = end - start;
     const MIN = 8;
-    const tick = () => {
-      const now = Date.now();
-      let raw = now - start;
-      if (raw < 0) raw = 0;
-      let elapsed = (total > 0) ? (raw % total) : raw;
-      if (elapsed < 0) elapsed = 0;
-      const pct = (elapsed / total) * 100;
-      const visible = Math.max(pct, MIN);
-      progressFill.style.width = `${visible}%`;
-      if (timeCur) timeCur.textContent = msToMMSS(elapsed);
-      if (timeTot) timeTot.textContent = msToMMSS(total);
-    };
-    tick();
-    spotifyTicker = setInterval(tick, 1000);
-  } else {
-    if (progressFill) progressFill.style.width = "20%";
-    if (timeCur) timeCur.textContent = "0:00";
-    if (timeTot) timeTot.textContent = "—";
+    const now = Date.now();
+    let raw = now - start;
+    if (raw < 0) raw = 0;
+    let elapsed = (total > 0) ? (raw % total) : raw;
+    const pct = (elapsed / total) * 100;
+    const visible = Math.max(pct, MIN);
+    progressFill.style.width = `${visible}%`;
+    if (timeCur) timeCur.textContent = msToMMSS(elapsed);
+    if (timeTot) timeTot.textContent = msToMMSS(total);
+
+    // ensure ticker exists
+    if (!spotifyTicker) {
+      spotifyTicker = setInterval(() => {
+        const now2 = Date.now();
+        let raw2 = now2 - start;
+        if (raw2 < 0) raw2 = 0;
+        let elapsed2 = (total > 0) ? (raw2 % total) : raw2;
+        const pct2 = (elapsed2 / total) * 100;
+        progressFill.style.width = `${Math.max(pct2, MIN)}%`;
+        if (timeCur) timeCur.textContent = msToMMSS(elapsed2);
+        if (timeTot) timeTot.textContent = msToMMSS(total);
+      }, 1000);
+    }
   }
 }
 
-/* sample center color */
+/* sample center color — returns 'rgb(r,g,b)' or null */
 async function sampleColor(url) {
   if (!url) return null;
   return new Promise(resolve => {
