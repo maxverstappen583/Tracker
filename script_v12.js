@@ -1,22 +1,25 @@
-// script_v12.js — improved last-seen and status logic
-// - lastOnlineTimestamp records the last time Lanyard reported the user NOT offline
-// - when user goes offline we show "Offline for X" using that timestamp (if available)
-// - when user comes online we show "Active now" briefly then hide it and keep it hidden
-// - while online we won't re-show last-seen repeatedly
-// - fade behavior uses setTextFade (already present in your system)
+/* script_v12.js — final robust Lanyard + Spotify + status handling
+   - accurate offline timer (uses lastOnlineTimestamp)
+   - last-seen is second line, fades and auto-hides when online
+   - badges, avatar, banner, spotify handled safely
+*/
 
 const USER_ID = "1319292111325106296";
+const POLL_MS = 4000;
+
 let spotifyTicker = null;
-let lastOnlineTimestamp = null; // when we last observed the user not-offline
+let offlineInterval = null;
+let lastOnlineTimestamp = null; // timestamp of last observed non-offline state
 let lastSeenHideTimer = null;
-let hideWhileOnline = false;    // when true, keep last-seen hidden while online
-let lastStatus = null;          // previous status to detect transitions
+let hideWhileOnline = false;
+let lastStatus = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   run();
-  setInterval(run, 4000);
+  setInterval(run, POLL_MS);
 });
 
+/* ---------- Main fetch + render ---------- */
 async function run() {
   try {
     const res = await fetch(`https://api.lanyard.rest/v1/users/${USER_ID}`, { cache: "no-store" });
@@ -25,7 +28,7 @@ async function run() {
     if (!j.success) return;
     const data = j.data;
 
-    // user info
+    // --- user/meta ---
     const user = data.discord_user || {};
     setText("username", user.global_name || user.username || "Unknown");
     setImg("avatar", buildAvatar(user));
@@ -43,65 +46,81 @@ async function run() {
     // badges
     renderBadges(user);
 
-    // compute status (treat invisible as offline for display)
+    // --- status / lastSeen logic ---
     const rawStatus = (data.discord_status || "offline").toLowerCase();
     const status = rawStatus === "invisible" ? "offline" : rawStatus;
 
-    // if user is not offline, update the lastOnlineTimestamp (we observed them active now)
+    // update lastOnlineTimestamp if we see the user not offline
     if (status !== "offline") {
       lastOnlineTimestamp = Date.now();
     }
 
-    // human label
+    // readable mapping
     const statusMap = { online: "Online", idle: "Away", dnd: "Do not disturb", offline: "Offline" };
-    const label = statusMap[status] ?? status;
-    // update visible status text (fade in/out)
-    await setTextFade("statusText", label);
+    const statusLabel = statusMap[status] ?? status;
 
-    // ----- last-seen logic -----
-    // clear any pending hide timer when status changes away from online
+    // update statusText (with fade)
+    await setTextFade("statusText", statusLabel);
+
+    // clear any pending hide timer if leaving the online hide state
     if (status !== "online" && lastSeenHideTimer) {
       clearTimeout(lastSeenHideTimer);
       lastSeenHideTimer = null;
     }
 
-    // ensure lastSeen element exists
     const lastSeenEl = document.getElementById("lastSeen");
-    if (!lastSeenEl) {
-      // still proceed with other updates
+
+    // offlineInterval management helper
+    function startOfflineInterval() {
+      if (offlineInterval) return;
+      offlineInterval = setInterval(() => {
+        if (!lastOnlineTimestamp) return;
+        const diff = Date.now() - lastOnlineTimestamp;
+        const text = `Offline for ${msToHuman(diff)}`;
+        setTextNoFade("lastSeen", text);
+      }, 1000);
+    }
+    function stopOfflineInterval() {
+      if (offlineInterval) { clearInterval(offlineInterval); offlineInterval = null; }
     }
 
+    // behavior per status
     if (status === "online") {
-      // If we have not already hidden while online, show Active now briefly then hide and set flag.
-      if (!hideWhileOnline) {
-        // show (ensure visible)
-        if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
-        await setTextFade("lastSeen", "Active now");
+      // show Active now briefly then hide the lastSeen entirely while online
+      hideWhileOnline = false; // we will set to true after hide
+      if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
+      await setTextFade("lastSeen", "Active now");
 
-        // schedule hide after visible duration
-        lastSeenHideTimer = setTimeout(() => {
+      // schedule hide
+      if (lastSeenHideTimer) { clearTimeout(lastSeenHideTimer); lastSeenHideTimer = null; }
+      lastSeenHideTimer = setTimeout(() => {
+        if (!lastSeenEl) return;
+        lastSeenEl.classList.add("fade-out");
+        setTimeout(() => {
           if (!lastSeenEl) return;
-          lastSeenEl.classList.add("fade-out");
-          setTimeout(() => {
-            if (!lastSeenEl) return;
-            lastSeenEl.classList.add("hidden");
-          }, 380);
-          lastSeenHideTimer = null;
-          hideWhileOnline = true; // keep it hidden while we remain online
-        }, 1500); // visible for 1.5s (changeable)
-      }
-      // If already hiddenWhileOnline, do nothing — keep hidden until status changes
+          lastSeenEl.classList.add("hidden");
+        }, 380);
+        hideWhileOnline = true;
+        lastSeenHideTimer = null;
+      }, 1500);
+
+      stopOfflineInterval();
+
     } else if (status === "idle") {
-      // Bring last-seen back and show "Away now"
       hideWhileOnline = false;
+      stopOfflineInterval(); // ensure offline interval not running
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       await setTextFade("lastSeen", "Away now");
+
     } else if (status === "dnd") {
       hideWhileOnline = false;
+      stopOfflineInterval();
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       await setTextFade("lastSeen", "Do not disturb");
+
     } else { // offline
       hideWhileOnline = false;
+      // show offline time using lastOnlineTimestamp (if available)
       if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
       if (lastOnlineTimestamp) {
         const diff = Date.now() - lastOnlineTimestamp;
@@ -109,16 +128,18 @@ async function run() {
       } else {
         await setTextFade("lastSeen", "Offline");
       }
+      // start updating every second
+      startOfflineInterval();
     }
 
-    // update status dot
+    // set status dot class
     setStatusDot(status);
 
-    // contact link
+    // contact
     const contactBtn = document.getElementById("contactBtn");
     if (contactBtn) contactBtn.href = `https://discord.com/users/${USER_ID}`;
 
-    // Spotify (top-level or activity)
+    // spotify: try top-level spotify object, otherwise activity-based spotify
     const spotify = data.spotify || (Array.isArray(data.activities) ? data.activities.find(a => a.name === "Spotify") : null);
     await renderSpotifySafe(spotify);
 
@@ -131,17 +152,18 @@ async function run() {
   }
 }
 
-/* ---------- Fade helper for text updates ----------
-   Usage: await setTextFade("statusText", "Online")
-   It fades out, swaps text, then fades back in. Uses an element-specific token to avoid races.
-*/
+/* ---------- Fade helpers ---------- */
+function setTextNoFade(id, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+}
 function setTextFade(id, text) {
   const el = document.getElementById(id);
   if (!el) return Promise.resolve();
   el._fadeToken = (el._fadeToken || 0) + 1;
   const token = el._fadeToken;
 
-  // If text unchanged, ensure visible and return
   if (el.textContent === text) {
     el.classList.remove("fade-out");
     return Promise.resolve();
@@ -161,8 +183,7 @@ function setTextFade(id, text) {
   });
 }
 
-/* ---------- Helpers & existing functions (unchanged) ---------- */
-
+/* ---------- DOM helpers ---------- */
 function setText(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
 function setImg(id, src) { const el = document.getElementById(id); if (el && src) el.src = src; }
 
@@ -172,14 +193,12 @@ function buildAvatar(user) {
   const ext = user.avatar.startsWith("a_") ? "gif" : "png";
   return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=512`;
 }
-
 function buildBanner(user) {
   if (!user) return "";
   if (!user.banner) return "";
   const ext = user.banner.startsWith("a_") ? "gif" : "png";
   return `https://cdn.discordapp.com/banners/${user.id}/${user.banner}.${ext}?size=1024`;
 }
-
 function msToHuman(ms) {
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
@@ -187,6 +206,7 @@ function msToHuman(ms) {
   return `${Math.floor(s/3600)}h`;
 }
 
+/* ---------- status dot ---------- */
 function setStatusDot(status) {
   const dot = document.getElementById("statusDot");
   if (!dot) return;
@@ -195,7 +215,7 @@ function setStatusDot(status) {
   dot.className = `status-dot status-${cls}`;
 }
 
-/* BADGES */
+/* ---------- badges ---------- */
 function badgeDefs() {
   return [
     {bit:1, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 15 9l7 .6-5 4 1 7L12 17 6.9 18 8 11l-5-4 7-.6L12 2z"/></svg>`},
@@ -207,7 +227,6 @@ function badgeDefs() {
     {bit:65536, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a3 3 0 013 3v1h3v2H6V6h3V5a3 3 0 013-3zM6 10h12v8a2 2 0 01-2 2H8a2 2 0 01-2-2v-8z"/></svg>`},
   ];
 }
-
 function renderBadges(user) {
   const container = document.getElementById("badges");
   if (!container) return;
@@ -226,7 +245,7 @@ function renderBadges(user) {
   });
 }
 
-/* SPOTIFY rendering — unchanged from earlier (keeps safe handling) */
+/* ---------- Spotify rendering (safe) ---------- */
 async function renderSpotifySafe(spotify) {
   const spBox = document.getElementById("spotify");
   const albumArt = document.getElementById("albumArt");
@@ -318,6 +337,7 @@ async function sampleColor(url) {
   });
 }
 
+/* utilities */
 function msToMMSS(ms) {
   const s = Math.floor(ms / 1000);
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
