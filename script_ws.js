@@ -1,10 +1,6 @@
 /* script_ws.js
-   Lanyard WebSocket client with robust Spotify update handling.
-   - Forces Spotify refresh when song, artist, timestamps.start or album art change.
-   - Transition-based status text behavior (show once, then hide).
-   - Last seen updates while offline.
-   - Reconnect/backoff behavior.
-   - Defensive DOM handling.
+   Robust Lanyard WebSocket client with Spotify signature fix and defensive UI handling.
+   Overwrite existing script_ws.js with this file.
 */
 
 (() => {
@@ -26,34 +22,32 @@
   let $statusText, $lastSeen, $statusDot, $avatar, $heroAvatar, $username, $contactBtn, $badges, $bannerWrap, $bannerImg;
   let $spotifyBox, $song, $artist, $albumArt, $progressFill, $timeCur, $timeTot;
 
-  // helper to query id
-  const $ = id => document.getElementById(id);
+  function $id(id) { return document.getElementById(id); }
 
-  // Wait for DOM ready then init
   function onReady() {
-    // set refs
-    $statusText = $("statusText");
-    $lastSeen   = $("lastSeen");
-    $statusDot  = $("statusDot");
-    $avatar     = $("avatar");
-    $heroAvatar = $("heroAvatar");
-    $username   = $("username");
-    $contactBtn = $("contactBtn");
-    $badges     = $("badges");
-    $bannerWrap = $("bannerWrap");
-    $bannerImg  = $("bannerImg");
-
-    $spotifyBox = $("spotify");
-    $song       = $("song");
-    $artist     = $("artist");
-    $albumArt   = $("albumArt");
-    $progressFill = $("progressFill");
-    $timeCur    = $("timeCurrent");
-    $timeTot    = $("timeTotal");
-
-    // defensive: always remove loading so UI won't stick
+    // defensive removal of loading so it never sticks
     document.body.classList.remove("loading");
     setTimeout(() => document.body.classList.remove("loading"), 3000);
+
+    // DOM refs
+    $statusText = $id("statusText");
+    $lastSeen   = $id("lastSeen");
+    $statusDot  = $id("statusDot");
+    $avatar     = $id("avatar");
+    $heroAvatar = $id("heroAvatar");
+    $username   = $id("username");
+    $contactBtn = $id("contactBtn");
+    $badges     = $id("badges");
+    $bannerWrap = $id("bannerWrap");
+    $bannerImg  = $id("bannerImg");
+
+    $spotifyBox = $id("spotify");
+    $song       = $id("song");
+    $artist     = $id("artist");
+    $albumArt   = $id("albumArt");
+    $progressFill = $id("progressFill");
+    $timeCur    = $id("timeCurrent");
+    $timeTot    = $id("timeTotal");
 
     connect();
   }
@@ -61,12 +55,8 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", onReady);
   else onReady();
 
-  /* ---------- small UI helpers ---------- */
-  function setTextNoFade(el, t) {
-    if (!el) return;
-    el.textContent = t;
-  }
-
+  /* small helpers */
+  function setTextNoFade(el, t) { if (!el) return; el.textContent = t; }
   function setTextFade(el, t) {
     if (!el) return Promise.resolve();
     el._fadeToken = (el._fadeToken || 0) + 1;
@@ -93,7 +83,6 @@
     const d = Math.floor(h / 24);
     return `${d}d`;
   }
-
   function msToMMSS(ms) {
     const s = Math.floor(ms / 1000);
     return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
@@ -106,7 +95,7 @@
     $statusDot.className = `status-dot status-${cls}`;
   }
 
-  /* ---------- badge rendering (simple) ---------- */
+  /* badges */
   function badgeDefs() {
     return [
       {bit:1, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 15 9l7 .6-5 4 1 7L12 17 6.9 18 8 11l-5-4 7-.6L12 2z"/></svg>`},
@@ -144,7 +133,7 @@
     return `https://cdn.discordapp.com/banners/${user.id}/${user.banner}.${ext}?size=1024`;
   }
 
-  /* ---------- last seen ---------- */
+  /* last seen */
   function startLastSeenInterval() {
     stopLastSeenInterval();
     if (!$lastSeen) return;
@@ -164,7 +153,7 @@
     setTimeout(()=>{ if (!$lastSeen) return; $lastSeen.classList.add("hidden"); }, 380);
   }
 
-  /* ---------- album color sampling ---------- */
+  /* album color */
   async function sampleColor(url) {
     if (!url) return null;
     return new Promise(resolve => {
@@ -198,9 +187,8 @@
     });
   }
 
-  /* ---------- spotify rendering (signature-based refresh) ---------- */
+  /* spotify with signature-based refresh */
   async function renderSpotify(spotify) {
-    // clear existing ticker
     if (spotifyTicker) { clearInterval(spotifyTicker); spotifyTicker = null; }
 
     if (!spotify) {
@@ -212,7 +200,6 @@
       return;
     }
 
-    // build a reliable signature using the parts that matter
     const trackId = spotify.track_id ?? spotify.sync_id ?? spotify.party?.id ?? spotify.id ?? null;
     const song = spotify.song ?? spotify.details ?? "";
     const artist = spotify.artist ?? spotify.state ?? "";
@@ -220,19 +207,15 @@
     const albumArtUrl = spotify.album_art_url ?? (spotify.assets?.large_image ? `https://i.scdn.co/image/${spotify.assets.large_image.replace("spotify:","")}` : "") || "";
 
     const signature = JSON.stringify({ trackId, song, artist, start, albumArtUrl });
-
-    // if signature unchanged, still update progress (in case timestamps moved) but we avoid reloading art/title repeatedly
     const isNew = signature !== lastSpotifySignature;
     lastSpotifySignature = signature;
 
-    // update UI fields (title/artist/art) on new signature
     if ($spotifyBox) $spotifyBox.classList.remove("hidden");
     if ($song) $song.textContent = song || "";
     if ($artist) $artist.textContent = artist || "";
 
     if ($albumArt) {
       if (albumArtUrl) {
-        // add cache-buster
         $albumArt.crossOrigin = "Anonymous";
         $albumArt.src = `${albumArtUrl}${albumArtUrl.includes('?') ? '&' : '?'}_=${Date.now()}`;
       } else {
@@ -240,7 +223,6 @@
       }
     }
 
-    // set progress fill color from album art (async)
     (async () => {
       if (!$progressFill) return;
       const col = await sampleColor(albumArtUrl);
@@ -248,7 +230,6 @@
       else $progressFill.style.background = `linear-gradient(90deg,#1db954,#6be38b)`;
     })();
 
-    // handle timestamps
     const end = spotify.timestamps?.end ?? null;
     const startTs = start;
 
@@ -257,9 +238,7 @@
       const MIN = 8;
       const tick = () => {
         const now = Date.now();
-        let raw = now - startTs;
-        if (raw < 0) raw = 0;
-        // if song loops, raw % total will loop
+        let raw = now - startTs; if (raw < 0) raw = 0;
         let elapsed = (total > 0) ? (raw % total) : raw;
         if (elapsed < 0) elapsed = 0;
         const pct = (elapsed / total) * 100;
@@ -271,17 +250,15 @@
       tick();
       spotifyTicker = setInterval(tick, 1000);
     } else {
-      // fallback small static bar
       if ($progressFill) $progressFill.style.width = "20%";
       if ($timeCur) $timeCur.textContent = "0:00";
       if ($timeTot) $timeTot.textContent = "—";
     }
   }
 
-  /* ---------- presence update handler ---------- */
+  /* presence handling */
   async function handlePresence(data) {
     try {
-      // discord_user meta
       if (data.discord_user) {
         const u = data.discord_user;
         if ($username) setTextNoFade($username, u.global_name || u.username || "Unknown");
@@ -299,7 +276,6 @@
       const rawStatus = (data.discord_status || "offline").toLowerCase();
       const status = rawStatus === "invisible" ? "offline" : rawStatus;
 
-      // update last online when seen active
       if (status !== "offline") lastOnlineTimestamp = Date.now();
 
       const labelMap = { online: "Online", idle: "Away", dnd: "Do not disturb", offline: "Offline" };
@@ -307,9 +283,6 @@
 
       if ($statusText) await setTextFade($statusText, label);
 
-      // transition logic:
-      // - when switching to online/idle/dnd: show once ('Active now'/'Away now'/'Do not disturb'), fade out and keep hidden while status unchanged
-      // - when switching to offline: show 'Last seen X ago' and start timer
       if (status === "online" && lastStatus !== "online") {
         stopLastSeenInterval();
         if ($lastSeen) { $lastSeen.classList.remove("hidden"); $lastSeen.classList.remove("fade-out"); }
@@ -350,7 +323,6 @@
         startLastSeenInterval();
 
       } else {
-        // no transition
         if (status === "offline") {
           if (!lastSeenInterval) startLastSeenInterval();
         } else {
@@ -362,34 +334,28 @@
 
       if ($contactBtn) $contactBtn.href = `https://discord.com/users/${USER_ID}`;
 
-      // spotify data: prefer top-level data.spotify if present
       const spotify = data.spotify || (Array.isArray(data.activities) ? data.activities.find(a => a.name === "Spotify") : null);
       await renderSpotify(spotify);
 
       lastStatus = status;
       document.body.classList.remove("loading");
     } catch (e) {
-      console.error("handlePresence error", e);
+      // fail silently but ensure UI unblocks
       document.body.classList.remove("loading");
     }
   }
 
-  /* ---------- websocket connect & recon ---------- */
+  /* websocket connect */
   function connect() {
     try {
       if (ws) { try { ws.close(); } catch(e) {} ws = null; }
-      if (!("WebSocket" in window)) {
-        console.warn("WebSocket not supported in this environment.");
-        document.body.classList.remove("loading");
-        return;
-      }
+      if (!("WebSocket" in window)) { document.body.classList.remove("loading"); return; }
 
       ws = new WebSocket(SOCKET_URL);
 
       ws.onopen = () => {
         reconnectDelay = 1000;
-        try { ws.send(JSON.stringify({ op: 2, d: { subscribe_to_id: USER_ID } })); } catch(e){ console.error("subscribe error", e); }
-        // console.info("WS open, subscribed", USER_ID);
+        try { ws.send(JSON.stringify({ op: 2, d: { subscribe_to_id: USER_ID } })); } catch(e) {}
       };
 
       ws.onmessage = (evt) => {
@@ -397,24 +363,12 @@
           const msg = JSON.parse(evt.data);
           if (!msg || !msg.d) return;
           handlePresence(msg.d);
-        } catch (e) {
-          console.error("WS message parse error", e);
-        }
+        } catch (e) {}
       };
 
-      ws.onclose = (ev) => {
-        // console.warn("WS closed", ev.code, ev.reason);
-        scheduleReconnect();
-      };
-
-      ws.onerror = (err) => {
-        console.error("WS error", err);
-        try { ws.close(); } catch(e) {}
-      };
-    } catch (e) {
-      console.error("connect error", e);
-      document.body.classList.remove("loading");
-    }
+      ws.onclose = () => scheduleReconnect();
+      ws.onerror = () => { try { ws.close(); } catch(e) {} };
+    } catch (e) { document.body.classList.remove("loading"); }
   }
 
   function scheduleReconnect() {
