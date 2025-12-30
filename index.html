@@ -3,47 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Max — Portfolio</title>
+  <title>Max — Live Status</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body class="loading">
+<body>
 
   <main class="wrap">
-
-    <!-- HERO -->
-    <section class="hero">
-      <div class="hero-inner">
-        <div class="hero-text">
-          <h1 class="intro">Hello, I'm <span>Max</span></h1>
-          <p class="subtitle">A developer specializing in software development</p>
-        </div>
-        <div class="hero-avatar">
-          <img id="heroAvatar" alt="small avatar" />
-        </div>
-      </div>
-    </section>
-
-    <!-- ABOUT -->
-    <section class="about-section section">
-      <h2 class="section-title">About Me</h2>
-      <p class="about-text">
-        I’m a Full Stack Developer with a strong focus on Python, passionate about building clean,
-        efficient, and scalable web applications. While Python is my specialty, I’m also proficient
-        in front-end technologies including HTML, CSS, and JavaScript, allowing me to create seamless
-        and responsive user experiences.
-      </p>
-
-      <div class="know">Core skills</div>
-      <div class="skills">
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg" alt="Python" loading="lazy">
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/javascript/javascript-original.svg" alt="JavaScript" loading="lazy">
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/html5/html5-original.svg" alt="HTML" loading="lazy">
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/css3/css3-original.svg" alt="CSS" loading="lazy">
-      </div>
-    </section>
-
-    <!-- PROFILE / STATUS -->
-    <section class="profile-section section">
+    <section class="profile-section">
       <div class="profile-card card" id="card">
 
         <div id="bannerWrap" class="banner-wrap hidden">
@@ -62,7 +28,7 @@
               <div id="badges" class="badges" aria-hidden="true"></div>
             </div>
 
-            <!-- STATUS BOX ensures lastSeen is always on second line -->
+            <!-- STATUS BOX: first line status, second line last-seen -->
             <div class="status-box">
               <div id="statusText" class="status-text">—</div>
               <div id="lastSeen" class="last-seen hidden">—</div>
@@ -94,41 +60,8 @@
 
       </div>
     </section>
-
-    <!-- PROJECTS -->
-    <section class="projects-section section">
-      <h2 class="section-title">Projects</h2>
-
-      <div class="projects-grid">
-
-        <article class="project-card card">
-          <div class="project-image-wrap">
-            <img class="project-image" src="https://files.catbox.moe/mf3gcj.png" alt="Maxy">
-          </div>
-          <div class="project-content">
-            <h3 class="project-title">Maxy</h3>
-            <p class="project-desc">Maxy is a personal project focused on building a reliable and user-friendly platform designed to support and manage online communities efficiently.</p>
-            <div class="project-actions">
-              <a class="btn view-bot" href="https://discord.com/oauth2/authorize?client_id=1408075564853493811" target="_blank" rel="noopener">View Bot</a>
-            </div>
-          </div>
-        </article>
-
-        <article class="project-card card">
-          <div class="project-image-wrap">
-            <img class="project-image" src="https://files.catbox.moe/76zc28.png" alt="Max">
-          </div>
-          <div class="project-content">
-            <h3 class="project-title">Max</h3>
-            <p class="project-desc">Max is a discontinued project that explored efficient tools and structured platform design.</p>
-          </div>
-        </article>
-
-      </div>
-    </section>
-
   </main>
 
-  <script src="script_ws.js" defer></script>
+  <script src="script.js" defer></script>
 </body>
 </html>
