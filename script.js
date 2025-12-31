@@ -1,126 +1,123 @@
-// script.js — Polls your Vercel proxy (/api/presence) and updates the UI
-const POLL_MS = 4000;           // how often client polls the proxy
-const FETCH_TIMEOUT = 8000;     // client timeout for the fetch
+// script.js — polling client (uses /api/presence proxy)
+const POLL_MS = 4000;
+const FETCH_TIMEOUT = 8000;
+const USER_ID = "1319292111325106296";
 
 let lastStatus = null;
 let lastOnlineTimestamp = null;
-let offlineInterval = null;
+let lastSeenInterval = null;
 let lastSeenHideTimer = null;
 let spotifyTicker = null;
 let lastSpotifySignature = null;
 
 const $ = id => document.getElementById(id);
 
-// safe DOM ready
 document.addEventListener("DOMContentLoaded", () => {
-  // remove any loading UI if present
-  document.body.classList.remove("loading");
-  setTimeout(()=>document.body.classList.remove("loading"), 2000);
-
+  // start polling
   poll();
   setInterval(poll, POLL_MS);
 });
 
-async function poll() {
+async function poll(){
   try {
-    const json = await fetchWithTimeout("/api/presence", FETCH_TIMEOUT);
-    if (!json || !json.success || !json.data) {
-      // no data — hide spotify and show offline
+    const data = await fetchPresence();
+    if (!data || !data.success || !data.data) {
+      // fail: show offline state minimal
       setText("username", "Offline");
       setText("statusText", "Offline");
       hideSpotify();
       return;
     }
-    const data = json.data;
 
-    // user
-    const user = data.discord_user || {};
+    const d = data.data;
+    const user = d.discord_user || {};
+
+    // user info
     setText("username", user.global_name || user.username || "Unknown");
     setImg("avatar", buildAvatar(user));
-    const bannerUrl = buildBanner(user);
-    if (bannerUrl) {
-      showElement("bannerWrap");
-      setImg("bannerImg", bannerUrl);
-    } else hideElement("bannerWrap");
 
-    // badges
+    const bannerUrl = buildBanner(user);
+    if (bannerUrl) { showElement("bannerWrap"); setImg("bannerImg", bannerUrl); }
+    else hideElement("bannerWrap");
+
     renderBadges(user);
 
-    // presence / status
-    const rawStatus = (data.discord_status || "offline").toLowerCase();
+    // status
+    const rawStatus = (d.discord_status || "offline").toLowerCase();
     const status = rawStatus === "invisible" ? "offline" : rawStatus;
+
     if (status !== "offline") lastOnlineTimestamp = Date.now();
 
     const labelMap = { online: "Online", idle: "Away", dnd: "Do not disturb", offline: "Offline" };
     const label = labelMap[status] ?? status;
     await setTextFade("statusText", label);
 
+    // handle second line behavior
     handleLastSeenTransition(status);
 
-    // contact link
-    const contact = $("contactBtn");
-    if (contact && user.id) contact.href = `https://discord.com/users/${user.id}`;
+    // contact button
+    if ($("contactBtn") && user.id) $("contactBtn").href = `https://discord.com/users/${user.id}`;
 
-    // spotify: data.spotify preferred, otherwise find in activities
-    const spotify = data.spotify || (Array.isArray(data.activities) ? data.activities.find(a => a.name === "Spotify") : null);
-    await renderSpotifyPolling(spotify);
+    // spotify detection: prefer top-level d.spotify, fallback to activities
+    const spotify = d.spotify || (Array.isArray(d.activities) ? d.activities.find(a => a.name === "Spotify") : null);
+    await renderSpotify(spotify);
 
     lastStatus = status;
+  } catch (err) {
+    // silent fail; don't break UI
+    console.error("poll error", err);
+  }
+}
+
+async function fetchPresence(){
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), FETCH_TIMEOUT);
+    const res = await fetch("/api/presence", { signal: controller.signal, cache: "no-store" });
+    clearTimeout(timer);
+    return await res.json();
   } catch (e) {
-    // silent fail; leave UI as-is but ensure spotify hidden if needed
-    console.error("poll error", e);
+    return null;
   }
 }
 
 /* ---------- helpers ---------- */
-
-function fetchWithTimeout(url, ms = 8000) {
-  return new Promise((resolve, reject) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => { controller.abort(); reject(new Error("fetch timeout")); }, ms);
-    fetch(url, { signal: controller.signal, cache: "no-store" })
-      .then(r => r.json())
-      .then(json => { clearTimeout(timer); resolve(json); })
-      .catch(err => { clearTimeout(timer); reject(err); });
-  });
-}
-
-function setText(id, t){ const el=$(id); if(el) el.textContent=t; }
-function setImg(id, src){ const el=$(id); if(el && src) el.src=src; }
+function setText(id, t){ const el=$(id); if(el) el.textContent = t; }
+function setImg(id, src){ const el=$(id); if(el && src) el.src = src; }
 function showElement(id){ const el=$(id); if(el) el.classList.remove("hidden"); }
 function hideElement(id){ const el=$(id); if(el) el.classList.add("hidden"); }
 
 function setTextFade(id, text) {
-  const el = $(id);
+  const el=$(id);
   if (!el) return Promise.resolve();
   el._fadeToken = (el._fadeToken || 0) + 1;
   const token = el._fadeToken;
   if (el.textContent === text) { el.classList.remove("fade-out"); return Promise.resolve(); }
-  return new Promise(resolve => {
+  return new Promise(res => {
     el.classList.add("fade-out");
-    setTimeout(() => {
-      if (el._fadeToken !== token) return resolve();
+    setTimeout(()=> {
+      if (el._fadeToken !== token) return res();
       el.textContent = text;
       el.classList.remove("fade-out");
-      setTimeout(() => { if (el._fadeToken !== token) return resolve(); resolve(); }, 380);
+      setTimeout(()=>{ if (el._fadeToken !== token) return res(); res(); }, 380);
     }, 220);
   });
 }
 
-/* ---------- last seen (second line rules) ---------- */
+/* ---------- last seen logic ---------- */
 function handleLastSeenTransition(status){
   const lastSeenEl = $("lastSeen");
   function startOfflineIntervalNow(){
-    stopOfflineInterval();
+    stopLastSeenInterval();
     if (!lastOnlineTimestamp) setText("lastSeen", "Last seen unknown");
     else setText("lastSeen", `Last seen ${msToHumanShort(Date.now() - lastOnlineTimestamp)} ago`);
-    offlineInterval = setInterval(() => {
+    lastSeenInterval = setInterval(()=> {
       if (!lastOnlineTimestamp) return;
       setText("lastSeen", `Last seen ${msToHumanShort(Date.now() - lastOnlineTimestamp)} ago`);
     }, 1000);
   }
-  function stopOfflineInterval(){
-    if (offlineInterval) { clearInterval(offlineInterval); offlineInterval = null; }
+  function stopLastSeenInterval(){
+    if (lastSeenInterval) { clearInterval(lastSeenInterval); lastSeenInterval = null; }
   }
   function hideLastSeenInstant(){
     if (!lastSeenEl) return;
@@ -129,30 +126,30 @@ function handleLastSeenTransition(status){
   }
 
   if (status === "online" && lastStatus !== "online") {
-    stopOfflineInterval();
+    stopLastSeenInterval();
     if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
-    setTextFade("lastSeen","Active now").then(()=>{ if (lastSeenHideTimer) clearTimeout(lastSeenHideTimer); lastSeenHideTimer=setTimeout(()=>{ hideLastSeenInstant(); lastSeenHideTimer=null; },1500); });
+    setTextFade("lastSeen","Active now").then(()=>{ if (lastSeenHideTimer) clearTimeout(lastSeenHideTimer); lastSeenHideTimer = setTimeout(()=>{ hideLastSeenInstant(); lastSeenHideTimer=null; },1500); });
 
   } else if (status === "online" && lastStatus === "online") {
-    stopOfflineInterval();
+    stopLastSeenInterval();
     if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
 
   } else if (status === "idle" && lastStatus !== "idle") {
-    stopOfflineInterval();
+    stopLastSeenInterval();
     if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
-    setTextFade("lastSeen","Away now").then(()=>{ if (lastSeenHideTimer) clearTimeout(lastSeenHideTimer); lastSeenHideTimer=setTimeout(()=>{ hideLastSeenInstant(); lastSeenHideTimer=null; },1500); });
+    setTextFade("lastSeen","Away now").then(()=>{ if (lastSeenHideTimer) clearTimeout(lastSeenHideTimer); lastSeenHideTimer = setTimeout(()=>{ hideLastSeenInstant(); lastSeenHideTimer=null; },1500); });
 
   } else if (status === "idle" && lastStatus === "idle") {
-    stopOfflineInterval();
+    stopLastSeenInterval();
     if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
 
   } else if (status === "dnd" && lastStatus !== "dnd") {
-    stopOfflineInterval();
+    stopLastSeenInterval();
     if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
-    setTextFade("lastSeen","Do not disturb").then(()=>{ if (lastSeenHideTimer) clearTimeout(lastSeenHideTimer); lastSeenHideTimer=setTimeout(()=>{ hideLastSeenInstant(); lastSeenHideTimer=null; },1500); });
+    setTextFade("lastSeen","Do not disturb").then(()=>{ if (lastSeenHideTimer) clearTimeout(lastSeenHideTimer); lastSeenHideTimer = setTimeout(()=>{ hideLastSeenInstant(); lastSeenHideTimer=null; },1500); });
 
   } else if (status === "dnd" && lastStatus === "dnd") {
-    stopOfflineInterval();
+    stopLastSeenInterval();
     if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
 
   } else if (status === "offline" && lastStatus !== "offline") {
@@ -161,17 +158,17 @@ function handleLastSeenTransition(status){
 
   } else {
     if (status === "offline") {
-      if (!offlineInterval) startOfflineIntervalNow();
+      if (!lastSeenInterval) startOfflineIntervalNow();
     } else {
-      stopOfflineInterval();
+      stopLastSeenInterval();
     }
   }
 }
 
-/* ---------- avatar / banner / badges ---------- */
+/* ---------- avatar/banner/badges ---------- */
 function buildAvatar(user){
   if (!user) return "";
-  if (!user.avatar) return `https://cdn.discordapp.com/embed/avatars/${Number(user.id || "0") % 5}.png`;
+  if (!user.avatar) return `https://cdn.discordapp.com/embed/avatars/${Number(user.id||0) % 5}.png`;
   const ext = user.avatar.startsWith("a_") ? "gif" : "png";
   return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=512`;
 }
@@ -181,7 +178,6 @@ function buildBanner(user){
   const ext = user.banner.startsWith("a_") ? "gif" : "png";
   return `https://cdn.discordapp.com/banners/${user.id}/${user.banner}.${ext}?size=1024`;
 }
-
 function badgeDefs(){
   return [
     {bit:1, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 15 9l7 .6-5 4 1 7L12 17 6.9 18 8 11l-5-4 7-.6L12 2z"/></svg>`},
@@ -207,17 +203,28 @@ function renderBadges(user){
   });
 }
 
-/* ---------- spotify polling render (signature-based) ---------- */
-async function renderSpotifyPolling(spotify) {
+/* ---------- spotify rendering ---------- */
+async function renderSpotify(spotify){
   if (spotifyTicker) { clearInterval(spotifyTicker); spotifyTicker=null; }
+
+  const spBox = $("spotify");
+  const albumArt = $("albumArt");
+  const songEl = $("song");
+  const artistEl = $("artist");
+  const progressFill = $("progressFill") || $("progressFill"); // ensure id matches CSS
+  const timeCur = $("timeCurrent") || $("timeCurrent");
+  const timeTot = $("timeTotal") || $("timeTotal");
 
   if (!spotify) {
     lastSpotifySignature = null;
-    hideSpotify();
+    if (spBox) spBox.classList.add("hidden");
+    const pf = $("progressFill");
+    if (pf) { pf.style.width="0%"; pf.style.background=""; }
+    if (timeCur) timeCur.textContent = "0:00";
+    if (timeTot) timeTot.textContent = "0:00";
     return;
   }
 
-  showElement("spotify");
   const trackId = spotify.track_id ?? spotify.sync_id ?? spotify.party?.id ?? spotify.id ?? null;
   const song = spotify.song ?? spotify.details ?? "";
   const artist = spotify.artist ?? spotify.state ?? "";
@@ -228,95 +235,83 @@ async function renderSpotifyPolling(spotify) {
   const isNew = signature !== lastSpotifySignature;
   lastSpotifySignature = signature;
 
-  setText("song", song || "");
-  setText("artist", artist || "");
-  if (albumArtUrl) setImg("albumArt", `${albumArtUrl}${albumArtUrl.includes('?') ? '&' : '?'}_=${Date.now()}`);
-  else setImg("albumArt", "");
+  if (spBox) spBox.classList.remove("hidden");
+  if (songEl) songEl.textContent = song || "";
+  if (artistEl) artistEl.textContent = artist || "";
 
-  // sample color for progress bar
+  if (albumArt && albumArtUrl) albumArt.src = `${albumArtUrl}${albumArtUrl.includes('?') ? '&' : '?'}_=${Date.now()}`;
+  else if (albumArt) albumArt.src = "";
+
   (async () => {
-    const fill = $("progressFill");
-    if (!fill) return;
+    const pf = $("progressFill");
+    if (!pf) return;
     const col = await sampleColor(albumArtUrl);
-    fill.style.background = col ? `linear-gradient(90deg, ${col}, rgba(255,255,255,0.18))` : `linear-gradient(90deg,#1db954,#6be38b)`;
+    pf.style.background = col ? `linear-gradient(90deg, ${col}, rgba(255,255,255,0.18))` : `linear-gradient(90deg,#1db954,#6be38b)`;
   })();
 
   const end = spotify.timestamps?.end ?? null;
   const startTs = start;
-  const progressFill = $("progressFill");
 
-  if (startTs && end && end > startTs && progressFill) {
+  if (startTs && end && end > startTs) {
     const total = end - startTs;
     const MIN = 8;
     const tick = () => {
       const now = Date.now();
-      let raw = now - startTs; if (raw < 0) raw = 0;
+      let raw = now - startTs;
+      if (raw < 0) raw = 0;
       let elapsed = (total > 0) ? (raw % total) : raw;
       if (elapsed < 0) elapsed = 0;
       const pct = (elapsed / total) * 100;
       const visible = Math.max(pct, MIN);
-      progressFill.style.width = `${visible}%`;
-      setText("timeCurrent", msToMMSS(elapsed));
-      setText("timeTotal", msToMMSS(total));
+      const pfEl = $("progressFill");
+      if (pfEl) pfEl.style.width = `${visible}%`;
+      if (timeCur) timeCur.textContent = msToMMSS(elapsed);
+      if (timeTot) timeTot.textContent = msToMMSS(total);
     };
     tick();
     spotifyTicker = setInterval(tick, 1000);
   } else {
-    if (progressFill) progressFill.style.width = "20%";
-    setText("timeCurrent", "0:00");
-    setText("timeTotal", "—");
+    const pfEl = $("progressFill");
+    if (pfEl) pfEl.style.width = "20%";
+    if (timeCur) timeCur.textContent = "0:00";
+    if (timeTot) timeTot.textContent = "—";
   }
 }
 
-function hideSpotify(){
-  const sp = $("spotify");
-  if (sp) sp.classList.add("hidden");
-}
+function hideSpotify(){ const sp = $("spotify"); if (sp) sp.classList.add("hidden"); }
 
-/* dominant-ish color sample function */
-async function sampleColor(url) {
+/* ---------- color sample util ---------- */
+async function sampleColor(url){
   if (!url) return null;
-  return new Promise(resolve => {
-    try {
+  return new Promise(resolve=>{
+    try{
       const img = new Image();
       img.crossOrigin = "Anonymous";
       img.src = url;
       img.onload = () => {
         try {
-          const W = 48, H = 48;
+          const W=48,H=48;
           const canvas = document.createElement("canvas");
-          canvas.width = W; canvas.height = H;
+          canvas.width=W; canvas.height=H;
           const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, W, H);
+          ctx.drawImage(img,0,0,W,H);
           const data = ctx.getImageData(0,0,W,H).data;
           let r=0,g=0,b=0,c=0;
           for (let y=8;y<40;y++){
             for (let x=8;x<40;x++){
-              const i = (y*W + x) * 4;
-              const a = data[i+3]; if (a === 0) continue;
-              r += data[i]; g += data[i+1]; b += data[i+2]; c++;
+              const i=(y*W + x)*4; const a=data[i+3]; if(!a) continue;
+              r+=data[i]; g+=data[i+1]; b+=data[i+2]; c++;
             }
           }
-          if (!c) return resolve(null);
+          if(!c) return resolve(null);
           resolve(`rgb(${Math.round(r/c)}, ${Math.round(g/c)}, ${Math.round(b/c)})`);
         } catch(e){ resolve(null); }
       };
-      img.onerror = () => resolve(null);
+      img.onerror = ()=>resolve(null);
     } catch(e){ resolve(null); }
   });
 }
 
-function msToMMSS(ms) {
-  const s = Math.floor(ms/1000);
-  return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
-}
-function msToHumanShort(ms) {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  return `${d}d`;
-}
+/* ---------- small util ---------- */
+function msToMMSS(ms){ const s=Math.floor(ms/1000); return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`; }
+function msToHumanShort(ms){ const s=Math.floor(ms/1000); if (s<60) return `${s}s`; const m=Math.floor(s/60); if(m<60) return `${m}m`; const h=Math.floor(m/60); if(h<24) return `${h}h`; const d=Math.floor(h/24); return `${d}d`; }
