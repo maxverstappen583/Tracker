@@ -3,61 +3,89 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Max — Live Status</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Max — Status</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
-<body class="loading">
+<body>
 
   <main class="wrap">
-    <section class="profile-section">
-      <div class="profile-card card" id="card">
+    <header class="hero">
+      <h1 class="intro">Hello, I'm <span>Max</span></h1>
+      <p class="subtitle">A developer specializing in software development</p>
+    </header>
 
-        <div id="bannerWrap" class="banner-wrap hidden">
-          <img id="bannerImg" alt="Banner">
+    <section class="profile-card card">
+      <div id="bannerWrap" class="banner-wrap hidden">
+        <img id="bannerImg" alt="Banner">
+      </div>
+
+      <div class="profile-inner">
+        <div class="avatar-wrap">
+          <img id="avatar" alt="Avatar">
+          <span id="statusDot" class="status-dot status-offline" aria-hidden="true"></span>
         </div>
 
-        <div class="profile-inner">
-          <div class="avatar-wrap" id="avatarWrap">
-            <img id="avatar" alt="Avatar" />
-            <span id="statusDot" class="status-dot status-offline" aria-hidden="true"></span>
+        <div class="profile-meta">
+          <div class="top-row">
+            <h2 id="username" class="username">Loading…</h2>
+            <div id="badges" class="badges" aria-hidden="true"></div>
           </div>
 
-          <div class="profile-meta">
-            <div class="top-row">
-              <h2 id="username" class="username">Loading…</h2>
-              <div id="badges" class="badges" aria-hidden="true"></div>
-            </div>
+          <div class="status-box">
+            <div id="statusText" class="status-text">—</div>
+            <div id="lastSeen" class="last-seen hidden">—</div>
+          </div>
 
-            <!-- STATUS BOX: first line status, second line last-seen -->
-            <div class="status-box">
-              <div id="statusText" class="status-text">—</div>
-              <div id="lastSeen" class="last-seen hidden">—</div>
-            </div>
-
-            <div class="profile-buttons">
-              <a id="contactBtn" class="btn contact" href="#" target="_blank" rel="noopener">Contact for Business</a>
-            </div>
+          <div class="profile-buttons">
+            <a id="contactBtn" class="btn contact" href="#" target="_blank" rel="noopener">Contact for Business</a>
           </div>
         </div>
+      </div>
 
-        <!-- Spotify -->
-        <div id="spotify" class="spotify-card hidden" aria-live="polite">
-          <img id="albumArt" class="spotify-art" alt="Album art">
-          <div class="spotify-info">
-            <div class="song" id="song">Song</div>
-            <div class="artist muted" id="artist">Artist</div>
+      <div id="spotify" class="spotify-card hidden" aria-live="polite">
+        <img id="albumArt" class="spotify-art" alt="Album art">
+        <div class="spotify-info">
+          <div class="song" id="song">Song</div>
+          <div class="artist muted" id="artist">Artist</div>
 
-            <div class="progress-container" aria-hidden="true">
-              <div id="progressFill" class="progress-fill"></div>
-            </div>
+          <div class="progress-container" aria-hidden="true">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
 
-            <div class="progress-time muted">
-              <span id="timeCurrent">0:00</span>
-              <span id="timeTotal">0:00</span>
-            </div>
+          <div class="progress-time muted">
+            <span id="timeCurrent">0:00</span>
+            <span id="timeTotal">0:00</span>
           </div>
         </div>
+      </div>
+    </section>
 
+    <section class="projects-section section">
+      <h2 class="section-title">Projects</h2>
+
+      <div class="projects-grid">
+        <article class="project-card card">
+          <div class="project-image-wrap">
+            <img class="project-image" src="https://files.catbox.moe/mf3gcj.png" alt="Maxy">
+          </div>
+          <div class="project-content">
+            <h3 class="project-title">Maxy</h3>
+            <p class="project-desc">Maxy is a personal project focused on building a reliable and user-friendly platform designed to support and manage online communities efficiently.</p>
+            <div class="project-actions">
+              <a class="btn view-bot" href="https://discord.com/oauth2/authorize?client_id=1408075564853493811" target="_blank" rel="noopener">View Bot</a>
+            </div>
+          </div>
+        </article>
+
+        <article class="project-card card">
+          <div class="project-image-wrap">
+            <img class="project-image" src="https://files.catbox.moe/76zc28.png" alt="Max">
+          </div>
+          <div class="project-content">
+            <h3 class="project-title">Max</h3>
+            <p class="project-desc">Max is a discontinued project that explored efficient tools and structured platform design.</p>
+          </div>
+        </article>
       </div>
     </section>
   </main>
