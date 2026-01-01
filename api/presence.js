@@ -1,5 +1,6 @@
 // api/presence.js
-// Vercel serverless route — proxies Lanyard REST to avoid client-side blocking/CORS.
+// Vercel serverless function — proxies Lanyard REST to avoid client-side blocking/CORS.
+
 export default async function handler(req, res) {
   try {
     const userId = "1319292111325106296"; // tracked Discord ID
