@@ -12,8 +12,6 @@ let lastSpotifySignature = null;
 const $ = id => document.getElementById(id);
 
 document.addEventListener("DOMContentLoaded", () => {
-  // initial UI unstick (in case)
-  document.body.classList.remove("loading");
   poll();
   setInterval(poll, POLL_MS);
 });
@@ -22,7 +20,6 @@ async function poll() {
   try {
     const json = await fetchWithTimeout("/api/presence", FETCH_TIMEOUT);
     if (!json || !json.success || !json.data) {
-      // fallback offline state
       setText("username", "Offline");
       setText("statusText", "Offline");
       hideSpotify();
@@ -31,17 +28,14 @@ async function poll() {
     const d = json.data;
     const user = d.discord_user || {};
 
-    // user info
     setText("username", user.global_name || user.username || "Unknown");
     setImg("avatar", buildAvatar(user));
 
     const banner = buildBanner(user);
-    if (banner) { showElement("bannerWrap"); setImg("bannerImg", banner); }
-    else hideElement("bannerWrap");
+    if (banner) { showElement("bannerWrap"); setImg("bannerImg", banner); } else hideElement("bannerWrap");
 
     renderBadges(user);
 
-    // status handling
     const rawStatus = (d.discord_status || "offline").toLowerCase();
     const status = rawStatus === "invisible" ? "offline" : rawStatus;
     if (status !== "offline") lastOnlineTimestamp = Date.now();
@@ -54,29 +48,29 @@ async function poll() {
 
     if ($("contactBtn") && user.id) $("contactBtn").href = `https://discord.com/users/${user.id}`;
 
-    // spotify detection
     const spotify = d.spotify || (Array.isArray(d.activities) ? d.activities.find(a => a.name === "Spotify") : null);
     await renderSpotify(spotify);
 
     lastStatus = status;
   } catch (e) {
-    // silent
+    // silent fail
     console.error("poll error", e);
   }
 }
 
-/* helpers */
+/* fetch with timeout */
 function fetchWithTimeout(url, ms=8000){
   return new Promise((resolve, reject) => {
     const controller = new AbortController();
     const timer = setTimeout(()=>{ controller.abort(); reject(new Error("fetch timeout")); }, ms);
     fetch(url, { signal: controller.signal, cache: "no-store" })
-      .then(r=>r.json())
-      .then(json=>{ clearTimeout(timer); resolve(json); })
-      .catch(err=>{ clearTimeout(timer); reject(err); });
+      .then(r => r.json())
+      .then(json => { clearTimeout(timer); resolve(json); })
+      .catch(err => { clearTimeout(timer); reject(err); });
   });
 }
 
+/* DOM helpers */
 function setText(id, t){ const el=$(id); if(el) el.textContent = t; }
 function setImg(id, src){ const el=$(id); if(el && src) el.src = src; }
 function showElement(id){ const el=$(id); if(el) el.classList.remove("hidden"); }
