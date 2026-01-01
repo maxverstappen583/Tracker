@@ -3,33 +3,33 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Max — Portfolio & Status</title>
+  <title>Max — Live Status</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <main class="wrap">
     <header class="hero">
-      <h1 class="intro">Hello, I'm <span>Max</span></h1>
+      <h1 class="intro">Hello, I'm <span id="heroName">Max</span></h1>
       <p class="subtitle">A developer specializing in software development</p>
     </header>
 
-    <!-- About -->
-    <section class="about section card">
-      <h2 class="section-title">About Me</h2>
+    <section class="about card">
+      <h2>About Me</h2>
       <p class="about-text">
         I’m a Full Stack Developer with a strong focus on Python, passionate about building clean,
-        efficient, and scalable web applications. I also work with HTML, CSS, and JavaScript.
+        efficient, and scalable web applications. I also work with HTML, CSS and JavaScript.
       </p>
-      <div class="skills" aria-hidden="true">
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg" alt="Python">
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/javascript/javascript-original.svg" alt="JavaScript">
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/html5/html5-original.svg" alt="HTML5">
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/css3/css3-original.svg" alt="CSS3">
+
+      <div class="skills">
+        <!-- remote icons (no local assets) -->
+        <img alt="Python" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg">
+        <img alt="JS" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/javascript/javascript-original.svg">
+        <img alt="HTML5" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/html5/html5-original.svg">
+        <img alt="CSS3" src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/css3/css3-original.svg">
       </div>
     </section>
 
-    <!-- Profile Card -->
-    <section class="profile-section section card" id="profileCard">
+    <section id="profileCard" class="profile-card card">
       <div id="bannerWrap" class="banner-wrap hidden"><img id="bannerImg" alt="banner"></div>
 
       <div class="profile-inner">
@@ -40,7 +40,7 @@
 
         <div class="profile-meta">
           <div class="top-row">
-            <h2 id="username" class="username">—</h2>
+            <h2 id="username" class="username">Loading…</h2>
             <div id="badges" class="badges" aria-hidden="true"></div>
           </div>
 
@@ -55,12 +55,11 @@
         </div>
       </div>
 
-      <!-- Spotify area -->
       <div id="spotify" class="spotify-card hidden" aria-live="polite">
         <img id="albumArt" class="spotify-art" alt="album art">
         <div class="spotify-info">
-          <div class="song" id="song">—</div>
-          <div class="artist muted" id="artist">—</div>
+          <div id="song" class="song">—</div>
+          <div id="artist" class="artist muted">—</div>
 
           <div class="progress-container" aria-hidden="true">
             <div id="progressFill" class="progress-fill"></div>
@@ -74,31 +73,29 @@
       </div>
     </section>
 
-    <!-- Projects -->
     <section class="projects section">
-      <h2 class="section-title">Projects</h2>
+      <h2>Projects</h2>
 
       <div class="project-card card">
         <div class="project-image-wrap">
-          <img class="project-image" src="https://files.catbox.moe/mf3gcj.png" alt="Maxy">
+          <div class="project-placeholder">Maxy</div>
         </div>
         <div class="project-content">
-          <h3 class="project-title">Maxy</h3>
-          <p class="project-desc">Maxy is a personal project focused on building a reliable and user-friendly platform designed to support and manage online communities efficiently.</p>
+          <h3>Maxy</h3>
+          <p>Maxy is a personal project focused on building a reliable and user-friendly platform designed to support and manage online communities efficiently.</p>
           <a class="btn view-bot" href="https://discord.com/oauth2/authorize?client_id=1408075564853493811" target="_blank" rel="noopener">View Bot</a>
         </div>
       </div>
 
       <div class="project-card card">
         <div class="project-image-wrap">
-          <img class="project-image" src="https://files.catbox.moe/76zc28.png" alt="Max">
+          <div class="project-placeholder">Max</div>
         </div>
         <div class="project-content">
-          <h3 class="project-title">Max</h3>
-          <p class="project-desc">Max is a discontinued project that explored efficient tools and structured platform design.</p>
+          <h3>Max</h3>
+          <p>Max is a discontinued project that explored efficient tools and structured platform design.</p>
         </div>
       </div>
-
     </section>
   </main>
 
