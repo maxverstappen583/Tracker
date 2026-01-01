@@ -1,91 +1,114 @@
-:root{
-  --bg:#0b0f1a; --card:#0f1724; --muted:#94a3b8; --accent:#4f7cff;
-  --success:#22c55e; --idle:#f59e0b; --danger:#ef4444; --offline:#6b7280;
-  --glass-border: rgba(255,255,255,0.03);
-}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Max — Portfolio & Status</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
 
-/* reset */
-*{box-sizing:border-box}
-html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#e6eef8}
-.wrap{max-width:980px;margin:0 auto;padding:28px 18px}
-.section{margin-top:28px}
-/* card */
-.card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:14px;padding:16px;border:1px solid var(--glass-border);box-shadow:0 14px 40px rgba(0,0,0,0.6)}
+  <main class="wrap">
 
-/* hero */
-.hero{text-align:center;margin-bottom:8px}
-.intro{font-size:32px;margin:0}
-.intro span{color:var(--accent)}
-.subtitle{color:var(--muted);margin:6px 0 0}
+    <!-- HERO -->
+    <header class="hero">
+      <h1 class="intro">Hello, I'm <span>Max</span></h1>
+      <p class="subtitle">A developer specializing in software development</p>
+    </header>
 
-/* about */
-.about .about-text{color:var(--muted);line-height:1.6;margin-bottom:12px}
-.skills{display:flex;gap:12px;justify-content:center;margin-top:6px}
-.skills img{width:48px;height:48px;border-radius:8px;padding:6px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent)}
+    <!-- ABOUT -->
+    <section class="about section card">
+      <h2 class="section-title">About Me</h2>
+      <p class="about-text">
+        I’m a Full Stack Developer with a strong focus on Python, passionate about building clean,
+        efficient, and scalable web applications. I also work with HTML, CSS, and JavaScript.
+      </p>
 
-/* profile */
-.profile-section{max-width:760px;margin:12px auto}
-.banner-wrap{width:100%;height:140px;overflow:hidden;border-radius:10px;margin:-16px -16px 12px -16px}
-.banner-wrap img{width:100%;height:140px;object-fit:cover}
-.profile-inner{display:flex;gap:14px;align-items:flex-start;padding:6px}
-.avatar-wrap{width:96px;height:96px;border-radius:999px;position:relative;padding:6px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent)}
-.avatar-wrap img{width:100%;height:100%;border-radius:999px;object-fit:cover;border:3px solid var(--card);transition:box-shadow .3s ease,transform .25s ease}
+      <div class="skills">
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg" alt="Python" loading="lazy">
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/javascript/javascript-original.svg" alt="JS" loading="lazy">
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/html5/html5-original.svg" alt="HTML" loading="lazy">
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/css3/css3-original.svg" alt="CSS" loading="lazy">
+      </div>
+    </section>
 
-/* status dot */
-.status-dot{position:absolute;right:8px;bottom:8px;width:16px;height:16px;border-radius:50%;border:3px solid var(--card);box-shadow:0 10px 26px rgba(0,0,0,0.6)}
-.status-dot.status-online{background:var(--success);animation:statusPulse 2s infinite}
-.status-dot.status-idle{background:var(--idle);animation:statusPulse 2s infinite}
-.status-dot.status-dnd{background:var(--danger);animation:statusPulse 2s infinite}
-.status-dot.status-offline{background:var(--offline)}
-@keyframes statusPulse{0%{box-shadow:0 0 0 0 rgba(79,124,255,0.08)}70%{box-shadow:0 0 0 12px rgba(79,124,255,0)}100%{box-shadow:0 0 0 0 rgba(79,124,255,0)}}
+    <!-- PROFILE / STATUS -->
+    <section class="profile-section section card" id="profileCard">
 
-/* meta */
-.profile-meta{flex:1}
-.top-row{display:flex;align-items:center;gap:10px}
-.username{font-size:20px;margin:6px 0 4px 0}
-.badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
-.badge-icon{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:rgba(255,255,255,0.02);transform:scale(.6);opacity:0;transition:transform .28s,opacity .28s}
-.badge-icon.show{transform:scale(1);opacity:1}
-.badge-icon svg{width:18px;height:18px;display:block;fill:#cfe6ff}
+      <div id="bannerWrap" class="banner-wrap hidden"><img id="bannerImg" alt="banner"></div>
 
-/* status lines */
-.status-box{display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-top:4px}
-.status-text{color:var(--muted);font-weight:700}
-.last-seen{color:var(--muted);font-size:13px}
+      <div class="profile-inner">
+        <div class="avatar-wrap">
+          <img id="avatar" alt="avatar">
+          <span id="statusDot" class="status-dot status-offline" aria-hidden="true"></span>
+        </div>
 
-/* utilities */
-.hidden{display:none!important}
-.fade-out{opacity:0;transform:translateY(-6px);transition:opacity .36s,transform .36s}
+        <div class="profile-meta">
+          <div class="top-row">
+            <h2 id="username" class="username">Loading…</h2>
+            <div id="badges" class="badges" aria-hidden="true"></div>
+          </div>
 
-/* buttons */
-.profile-buttons{display:flex;gap:10px;justify-content:flex-start;margin-top:8px}
-.btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--accent);color:white;text-decoration:none;font-weight:600;box-shadow:0 8px 24px rgba(79,124,255,0.08);transition:transform .18s}
-.btn.contact{background:#10b981}
-.btn.view-bot{background:#4f7cff}
-.btn:hover{transform:translateY(-4px)}
+          <!-- first line status, second line last-seen -->
+          <div class="status-box">
+            <div id="statusText" class="status-text">—</div>
+            <div id="lastSeen" class="last-seen hidden">—</div>
+          </div>
 
-/* spotify */
-.spotify-card{display:flex;gap:12px;align-items:center;margin-top:12px;padding:10px;border-radius:10px}
-.spotify-art{width:72px;height:72px;border-radius:10px;object-fit:cover;box-shadow:0 10px 30px rgba(0,0,0,0.45)}
-.spotify-info{flex:1;min-width:0}
-.song{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.artist{color:var(--muted);font-size:13px}
-.progress-container{width:100%;height:8px;background:rgba(255,255,255,0.05);border-radius:999px;overflow:hidden;flex-shrink:0;margin-top:10px}
-.progress-fill{height:100%;width:0%;min-width:8%;border-radius:inherit;transition:width .6s linear, background .4s ease}
-.progress-time{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:8px}
+          <div class="profile-buttons">
+            <a id="contactBtn" class="btn contact" href="#" target="_blank" rel="noopener">Contact for Business</a>
+          </div>
+        </div>
+      </div>
 
-/* projects */
-.project-card{display:grid;grid-template-columns:160px 1fr;gap:16px;align-items:center;padding:12px;border-radius:12px;margin-top:12px}
-.project-image-wrap{width:160px;height:110px;overflow:hidden;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent)}
-.project-image{width:100%;height:100%;object-fit:cover}
-.project-title{margin:0;font-size:16px}
-.project-desc{margin:8px 0 0;color:var(--muted)}
+      <!-- Spotify -->
+      <div id="spotify" class="spotify-card hidden" aria-live="polite">
+        <img id="albumArt" class="spotify-art" alt="album art">
+        <div class="spotify-info">
+          <div class="song" id="song">—</div>
+          <div class="artist muted" id="artist">—</div>
 
-/* responsive */
-@media (max-width:900px){
-  .project-card{grid-template-columns:1fr}
-  .project-image-wrap{width:100%;height:200px}
-  .profile-inner{flex-direction:row;gap:12px}
-  .profile-card{width:94%}
-  .hero{padding:12px}
-}
+          <div class="progress-container" aria-hidden="true">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+
+          <div class="progress-time muted">
+            <span id="timeCurrent">0:00</span>
+            <span id="timeTotal">0:00</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- PROJECTS -->
+    <section class="projects section">
+      <h2 class="section-title">Projects</h2>
+
+      <div class="project-card card">
+        <div class="project-image-wrap">
+          <img class="project-image" src="https://files.catbox.moe/mf3gcj.png" alt="Maxy">
+        </div>
+        <div class="project-content">
+          <h3 class="project-title">Maxy</h3>
+          <p class="project-desc">Maxy is a personal project focused on building a reliable and user-friendly platform designed to support and manage online communities efficiently.</p>
+          <a class="btn view-bot" href="https://discord.com/oauth2/authorize?client_id=1408075564853493811" target="_blank" rel="noopener">View Bot</a>
+        </div>
+      </div>
+
+      <div class="project-card card">
+        <div class="project-image-wrap">
+          <img class="project-image" src="https://files.catbox.moe/76zc28.png" alt="Max">
+        </div>
+        <div class="project-content">
+          <h3 class="project-title">Max</h3>
+          <p class="project-desc">Max is a discontinued project that explored efficient tools and structured platform design.</p>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <script src="script.js" defer></script>
+</body>
+</html>
