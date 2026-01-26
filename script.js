@@ -1,333 +1,109 @@
-// script.js — Lanyard WebSocket realtime client (no server)
-// USER_ID: tracked Discord user ID (you gave this ID)
-const USER_ID = "1319292111325106296";
-
-const wsUrl = "wss://api.lanyard.rest/socket";
-let ws = null;
-let heartbeatInterval = null;
-let lastOnlineTimestamp = null;
-let lastSeenTimer = null;
-let spotifyTicker = null;
-
-const $ = id => document.getElementById(id);
-
-// UI helpers
-function setText(id, txt){ const el = $(id); if(el) el.textContent = txt; }
-function setImg(id, src){ const el = $(id); if(el) el.src = src; }
-function show(id){ const el = $(id); if(el) el.classList.remove("hidden"); }
-function hide(id){ const el = $(id); if(el) el.classList.add("hidden"); }
-function setStatusDot(status){
-  const dot = $("statusDot");
-  if(!dot) return;
-  dot.className = "status-dot status-" + (status || "offline");
+:root{
+  --bg:#0b0f1a; --card:#0f1724; --muted:#94a3b8; --accent:#4f7cff;
+  --success:#22c55e; --idle:#f59e0b; --danger:#ef4444; --offline:#6b7280;
+  --glass-border: rgba(255,255,255,0.03);
+  --spotify-min:8%;
+  --max-width:980px;
 }
 
-/* Start connection */
-function connect() {
-  if (ws) try { ws.close(); } catch(e){ }
-  ws = new WebSocket(wsUrl);
-  ws.addEventListener("open", () => {
-    // no-op; wait for Hello
-  });
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#e6eef8;-webkit-font-smoothing:antialiased}
+.wrap{max-width:var(--max-width);margin:0 auto;padding:28px 18px}
+.section{margin-top:28px}
 
-  ws.addEventListener("message", ev => {
-    try {
-      const msg = JSON.parse(ev.data);
-      handleMessage(msg);
-    } catch (e) {
-      // ignore invalid
-      console.warn("Invalid WS message", e);
-    }
-  });
+/* card */
+.card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:14px;padding:16px;border:1px solid var(--glass-border);box-shadow:0 14px 40px rgba(0,0,0,0.6)}
 
-  ws.addEventListener("close", () => {
-    cleanupHeartbeat();
-    // reconnect after backoff
-    setTimeout(connect, 2500);
-  });
+/* HERO */
+.hero{text-align:center;margin-bottom:8px}
+.intro{font-size:32px;margin:0}
+.intro span{color:var(--accent)}
+.subtitle{color:var(--muted);margin:6px 0 0}
 
-  ws.addEventListener("error", () => {
-    cleanupHeartbeat();
-  });
+/* ABOUT */
+.about .about-text{color:var(--muted);line-height:1.6;margin-bottom:12px}
+.skills{display:flex;gap:12px;justify-content:center;margin-top:6px;align-items:center}
+.skills img{
+  width:40px;
+  height:40px;
+  border-radius:8px;
+  padding:4px;
+  background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+  object-fit:contain;
 }
 
-/* Handle incoming opcode messages */
-function handleMessage(msg){
-  if (!msg || typeof msg.op !== "number") return;
-  // Hello (op 1)
-  if (msg.op === 1 && msg.d && msg.d.heartbeat_interval) {
-    const interval = msg.d.heartbeat_interval;
-    startHeartbeat(interval);
-    // Subscribe to our ID
-    sendInit();
-    return;
-  }
+/* PROFILE / BANNER */
+.banner-wrap{width:100%;height:140px;overflow:hidden;border-radius:10px;margin:-16px -16px 12px -16px}
+.banner-wrap img{width:100%;height:140px;object-fit:cover}
+.profile-inner{display:flex;gap:14px;align-items:flex-start;padding:6px}
+.avatar-wrap{width:96px;height:96px;border-radius:999px;position:relative;padding:6px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent)}
+.avatar-wrap img{width:100%;height:100%;border-radius:999px;object-fit:cover;border:3px solid var(--card);transition:box-shadow .3s ease,transform .25s ease}
 
-  // Events (op 0): INIT_STATE or PRESENCE_UPDATE
-  if (msg.op === 0 && msg.t) {
-    if (msg.t === "INIT_STATE") {
-      // msg.d may be a map (userId->presence) or a single presence object
-      const data = msg.d;
-      let presence = null;
-      if (data && data[USER_ID]) presence = data[USER_ID];
-      else presence = data;
-      if (presence) updatePresence(presence);
-    } else if (msg.t === "PRESENCE_UPDATE") {
-      // msg.d is presence object (with user_id)
-      updatePresence(msg.d);
-    }
-  }
-}
+/* STATUS DOT */
+.status-dot{position:absolute;right:8px;bottom:8px;width:16px;height:16px;border-radius:50%;border:3px solid var(--card);box-shadow:0 10px 26px rgba(0,0,0,0.6)}
+.status-dot.status-online{background:var(--success);animation:statusPulse 2s infinite}
+.status-dot.status-idle{background:var(--idle);animation:statusPulse 2s infinite}
+.status-dot.status-dnd{background:var(--danger);animation:statusPulse 2s infinite}
+.status-dot.status-offline{background:var(--offline)}
+@keyframes statusPulse{0%{box-shadow:0 0 0 0 rgba(79,124,255,0.08)}70%{box-shadow:0 0 0 12px rgba(79,124,255,0)}100%{box-shadow:0 0 0 0 rgba(79,124,255,0)}}
 
-/* Send Initialize (op 2) */
-function sendInit(){
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  const payload = { op: 2, d: { subscribe_to_id: String(USER_ID) } };
-  ws.send(JSON.stringify(payload));
-}
+/* META / TOP ROW */
+.profile-meta{flex:1}
+.top-row{display:flex;align-items:center;gap:10px}
+.username{font-size:20px;margin:6px 0 4px 0}
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.badge-icon{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:rgba(255,255,255,0.02);transform:scale(.6);opacity:0;transition:transform .28s cubic-bezier(.2,.85,.25,1),opacity .28s}
+.badge-icon.show{transform:scale(1);opacity:1}
+.badge-icon svg{width:18px;height:18px;display:block;fill:#cfe6ff}
 
-/* Heartbeat (op 3) */
-function startHeartbeat(intervalMs) {
-  cleanupHeartbeat();
-  // Lanyard expects sending {op: 3} on interval
-  heartbeatInterval = setInterval(() => {
-    try { ws.send(JSON.stringify({ op: 3 })); } catch(e) {}
-  }, Math.max(1000, intervalMs || 30000));
-}
-function cleanupHeartbeat(){
-  if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
-}
+/* status lines */
+.status-box{display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-top:4px}
+.status-text{color:var(--muted);font-weight:700}
+.last-seen{color:var(--muted);font-size:13px}
 
-/* Update UI from presence object */
-function updatePresence(pres){
-  if (!pres) return;
-  // username & avatar
-  const user = pres.discord_user || pres.user || {};
-  setText("username", user.global_name || user.username || "Unknown");
-  setImg("avatar", buildAvatar(user));
-  // banner
-  const banner = buildBanner(user);
-  if (banner) { show("bannerWrap"); setImg("bannerImg", banner); } else hide("bannerWrap");
-  // badges
-  renderBadges(user);
+/* utilities */
+.hidden{display:none!important}
+.fade-out{opacity:0;transform:translateY(-6px);transition:opacity .36s,transform .36s}
 
-  // status handling
-  const raw = (pres.discord_status || "offline").toLowerCase();
-  const status = raw === "invisible" ? "offline" : raw;
-  setStatusDot(status);
-  const labels = { online: "Online", idle: "Away", dnd: "Do not disturb", offline: "Offline" };
-  setTextFade("statusText", labels[status] || status);
+/* buttons */
+.profile-buttons{display:flex;gap:10px;justify-content:flex-start;margin-top:8px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--accent);color:white;text-decoration:none;font-weight:600;box-shadow:0 8px 24px rgba(79,124,255,0.08);transition:transform .18s}
+.btn.contact{background:#10b981}
+.btn.view-bot{background:#4f7cff}
+.btn:hover{transform:translateY(-4px)}
 
-  // last seen logic: if status != offline -> set lastOnlineTimestamp to now
-  if (status !== "offline") {
-    lastOnlineTimestamp = Date.now();
-  }
-  handleLastSeen(status);
+/* SPOTIFY */
+.spotify-card{display:flex;gap:12px;align-items:center;margin-top:12px;padding:10px;border-radius:10px}
+.spotify-art{width:72px;height:72px;border-radius:10px;object-fit:cover;box-shadow:0 10px 30px rgba(0,0,0,0.45)}
+.spotify-info{flex:1;min-width:0}
+.song{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.artist{color:var(--muted);font-size:13px}
+.progress-container{width:100%;height:8px;background:rgba(255,255,255,0.05);border-radius:999px;overflow:hidden;flex-shrink:0;margin-top:10px}
+.progress-fill{height:100%;width:0%;min-width:var(--spotify-min);border-radius:inherit;transition:width .6s linear, background .4s ease}
+.progress-time{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:8px}
 
-  // contact link
-  if (user.id) $("contactBtn").href = `https://discord.com/users/${user.id}`;
+/* PROJECTS */
+.project-card{display:grid;grid-template-columns:160px 1fr;gap:16px;align-items:center;padding:12px;border-radius:12px;margin-top:12px}
+.project-image-wrap{width:160px;height:110px;overflow:hidden;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent)}
+.project-image{width:100%;height:100%;object-fit:cover}
+.project-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:700;min-height:110px}
+.project-title{margin:0;font-size:16px}
+.project-desc{margin:8px 0 0;color:var(--muted)}
 
-  // spotify — Lanyard may provide top-level spotify or in activities
-  const spotify = pres.spotify || (Array.isArray(pres.activities) ? pres.activities.find(a => a.name === "Spotify") : null);
-  renderSpotify(spotify);
-}
-
-/* Build avatar/banner urls */
-function buildAvatar(user){
-  if(!user) return "";
-  if(!user.avatar) return `https://cdn.discordapp.com/embed/avatars/${Number(user.id||0) % 5}.png`;
-  const ext = user.avatar.startsWith("a_") ? "gif" : "png";
-  return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=512`;
-}
-function buildBanner(user){
-  if(!user) return "";
-  if(!user.banner) return "";
-  const ext = user.banner.startsWith("a_") ? "gif" : "png";
-  return `https://cdn.discordapp.com/banners/${user.id}/${user.banner}.${ext}?size=1024`;
-}
-
-/* Badges (simple icons if flags set) */
-function renderBadges(user){
-  const container = $("badges");
-  if(!container) return;
-  container.innerHTML = "";
-  const flags = Number(user?.public_flags ?? user?.flags ?? 0);
-  const defs = [
-    {bit:1, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 15 9l7 .6-5 4 1 7L12 17 6.9 18 8 11l-5-4 7-.6L12 2z"/></svg>`},
-    {bit:2, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l2.9 6 6.6.6-4.8 3.9 1.2 6.5L12 17l-7.9 2 1.2-6.5L.5 8.6l6.6-.6L12 2z"/></svg>`},
-    {bit:4, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l9 4-9 4-9-4 9-4zm0 12l9 4-9 4-9-4 9-4z"/></svg>`}
-  ];
-  const found = defs.filter(d => (flags & d.bit) === d.bit);
-  if (!found.length) { container.style.display = "none"; return; }
-  container.style.display = "flex";
-  found.forEach((b,i)=>{
-    const span = document.createElement("span");
-    span.className = "badge-icon";
-    span.innerHTML = b.svg;
-    container.appendChild(span);
-    setTimeout(()=> span.classList.add("show"), i * 80);
-  });
-}
-
-/* LAST-SEEN logic */
-/* Show Active/Away/DND briefly then hide; on offline show "Last seen X" updating */
-function handleLastSeen(status){
-  const el = $("lastSeen");
-  if (!el) return;
-  clearInterval(lastSeenTimer);
-  lastSeenTimer = null;
-
-  const hideDelayed = (ms=1500) => {
-    setTimeout(()=> {
-      el.classList.add("fade-out");
-      setTimeout(()=> el.classList.add("hidden"), 360);
-    }, ms);
-  };
-
-  if (status === "online") {
-    el.classList.remove("hidden"); el.classList.remove("fade-out");
-    setText("lastSeen", "Active now");
-    hideDelayed(1500);
-  } else if (status === "idle") {
-    el.classList.remove("hidden"); el.classList.remove("fade-out");
-    setText("lastSeen", "Away now");
-    hideDelayed(1500);
-  } else if (status === "dnd") {
-    el.classList.remove("hidden"); el.classList.remove("fade-out");
-    setText("lastSeen", "Do not disturb");
-    hideDelayed(1500);
-  } else { // offline
-    el.classList.remove("hidden"); el.classList.remove("fade-out");
-    if (!lastOnlineTimestamp) {
-      setText("lastSeen", "Last seen unknown");
-    } else {
-      setText("lastSeen", `Last seen ${msToHumanShort(Date.now() - lastOnlineTimestamp)} ago`);
-      lastSeenTimer = setInterval(()=> {
-        setText("lastSeen", `Last seen ${msToHumanShort(Date.now() - lastOnlineTimestamp)} ago`);
-      }, 1000);
-    }
+/* responsive tweaks */
+@media (max-width:900px){
+  .project-card{grid-template-columns:1fr}
+  .project-image-wrap{width:100%;height:200px}
+  .profile-inner{flex-direction:row;gap:12px}
+  .skills img{
+    width:36px;
+    height:36px;
+    padding:3px;
   }
 }
 
-/* Simple fade + text setter to animate text changes */
-function setTextFade(id, text){
-  const el = $(id);
-  if(!el) return;
-  if(el.textContent === text){ el.classList.remove("fade-out"); return; }
-  el.classList.add("fade-out");
-  setTimeout(()=> {
-    el.textContent = text;
-    el.classList.remove("fade-out");
-  }, 220);
+/* very small */
+@media (max-width:420px){
+  .intro{font-size:26px}
+  .skills img{width:32px;height:32px;padding:2px}
 }
-
-/* Spotify rendering: show card, progress bar with minimum size, color sample from album image */
-function renderSpotify(spotify){
-  if (spotifyTicker) { clearInterval(spotifyTicker); spotifyTicker = null; }
-  const spBox = $("spotify");
-  const albumEl = $("albumArt");
-  const songEl = $("song");
-  const artistEl = $("artist");
-  const progressEl = $("progressFill");
-  const tCur = $("timeCurrent");
-  const tTot = $("timeTotal");
-
-  if (!spotify) {
-    if (spBox) spBox.classList.add("hidden");
-    if (progressEl) { progressEl.style.width = "0%"; progressEl.style.background = ""; }
-    if (tCur) tCur.textContent = "0:00";
-    if (tTot) tTot.textContent = "0:00";
-    return;
-  }
-
-  // spotify object shape: Lanyard exposes spotify{song,artist,album_art_url,timestamps}
-  const song = spotify.song ?? spotify.details ?? "";
-  const artist = spotify.artist ?? spotify.state ?? "";
-  const start = spotify.timestamps?.start ?? null;
-  const end = spotify.timestamps?.end ?? null;
-  const art = spotify.album_art_url ?? (spotify.assets?.large_image ? `https://i.scdn.co/image/${spotify.assets.large_image.replace("spotify:","")}` : "");
-
-  if (spBox) spBox.classList.remove("hidden");
-  if (songEl) songEl.textContent = song || "Unknown";
-  if (artistEl) artistEl.textContent = artist || "";
-
-  if (albumEl && art) albumEl.src = art;
-
-  // sample color once per new album (cheap)
-  (async () => {
-    if (!progressEl) return;
-    const col = await sampleColor(art);
-    progressEl.style.background = col ? `linear-gradient(90deg, ${col}, rgba(255,255,255,0.12))` : `linear-gradient(90deg,#1db954,#6be38b)`;
-  })();
-
-  if (start && end && end > start && progressEl) {
-    const total = end - start;
-    const MIN = 8; // minimum width percent so short songs still show
-    const tick = () => {
-      const now = Date.now();
-      let elapsed = now - start;
-      if (elapsed < 0) elapsed = 0;
-      // If song set to repeat on client, lanyard timestamps will still be absolute; use modulo
-      const pct = ((elapsed % total) / total) * 100;
-      const visible = Math.max(pct, MIN);
-      progressEl.style.width = `${visible}%`;
-      if (tCur) tCur.textContent = formatMS(elapsed % total);
-      if (tTot) tTot.textContent = formatMS(total);
-    };
-    tick();
-    spotifyTicker = setInterval(tick, 1000);
-  } else {
-    if (progressEl) progressEl.style.width = "20%";
-    if (tCur) tCur.textContent = "0:00";
-    if (tTot) tTot.textContent = "—";
-  }
-}
-
-/* Format helpers */
-function formatMS(ms){ const s = Math.floor(ms/1000); return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`; }
-function msToHumanShort(ms){
-  const s = Math.floor(ms/1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s/60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m/60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h/24);
-  return `${d}d`;
-}
-
-/* Fast, small average color sample for album art (may fail due to CORS sometimes) */
-async function sampleColor(url){
-  if (!url) return null;
-  return new Promise(resolve => {
-    try {
-      const img = new Image();
-      img.crossOrigin = "Anonymous";
-      img.src = url;
-      img.onload = () => {
-        try {
-          const W = 40, H = 40;
-          const canvas = document.createElement("canvas");
-          canvas.width = W; canvas.height = H;
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, W, H);
-          const data = ctx.getImageData(0,0,W,H).data;
-          let r=0,g=0,b=0,c=0;
-          for (let y=6;y<34;y++){
-            for (let x=6;x<34;x++){
-              const i = (y*W + x)*4;
-              if (data[i+3] === 0) continue;
-              r += data[i]; g += data[i+1]; b += data[i+2]; c++;
-            }
-          }
-          if (!c) return resolve(null);
-          resolve(`rgb(${Math.round(r/c)}, ${Math.round(g/c)}, ${Math.round(b/c)})`);
-        } catch(e){ resolve(null); }
-      };
-      img.onerror = () => resolve(null);
-    } catch(e) { resolve(null); }
-  });
-}
-
-/* set up WS and start */
-connect();
