@@ -1,109 +1,280 @@
-:root{
-  --bg:#0b0f1a; --card:#0f1724; --muted:#94a3b8; --accent:#4f7cff;
-  --success:#22c55e; --idle:#f59e0b; --danger:#ef4444; --offline:#6b7280;
-  --glass-border: rgba(255,255,255,0.03);
-  --spotify-min:8%;
-  --max-width:980px;
-}
+// script.js — direct REST polling to Lanyard (no backend, no websocket)
+// Tracked Discord ID (you provided)
+const USER_ID = "1319292111325106296";
 
-*{box-sizing:border-box}
-html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#e6eef8;-webkit-font-smoothing:antialiased}
-.wrap{max-width:var(--max-width);margin:0 auto;padding:28px 18px}
-.section{margin-top:28px}
+const POLL_MS = 4000;
+const FETCH_TIMEOUT = 8000;
 
-/* card */
-.card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:14px;padding:16px;border:1px solid var(--glass-border);box-shadow:0 14px 40px rgba(0,0,0,0.6)}
+let lastStatus = null;
+let lastOnlineTimestamp = null;
+let lastSeenInterval = null;
+let lastSeenHideTimer = null;
+let spotifyTicker = null;
 
-/* HERO */
-.hero{text-align:center;margin-bottom:8px}
-.intro{font-size:32px;margin:0}
-.intro span{color:var(--accent)}
-.subtitle{color:var(--muted);margin:6px 0 0}
+const $ = id => document.getElementById(id);
 
-/* ABOUT */
-.about .about-text{color:var(--muted);line-height:1.6;margin-bottom:12px}
-.skills{display:flex;gap:12px;justify-content:center;margin-top:6px;align-items:center}
-.skills img{
-  width:40px;
-  height:40px;
-  border-radius:8px;
-  padding:4px;
-  background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
-  object-fit:contain;
-}
+document.addEventListener("DOMContentLoaded", () => {
+  poll();
+  setInterval(poll, POLL_MS);
+});
 
-/* PROFILE / BANNER */
-.banner-wrap{width:100%;height:140px;overflow:hidden;border-radius:10px;margin:-16px -16px 12px -16px}
-.banner-wrap img{width:100%;height:140px;object-fit:cover}
-.profile-inner{display:flex;gap:14px;align-items:flex-start;padding:6px}
-.avatar-wrap{width:96px;height:96px;border-radius:999px;position:relative;padding:6px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent)}
-.avatar-wrap img{width:100%;height:100%;border-radius:999px;object-fit:cover;border:3px solid var(--card);transition:box-shadow .3s ease,transform .25s ease}
+async function poll() {
+  try {
+    const json = await fetchWithTimeout(`https://api.lanyard.rest/v1/users/${USER_ID}`, FETCH_TIMEOUT);
+    if (!json || !json.success || !json.data) {
+      handleOfflineFallback();
+      return;
+    }
+    const d = json.data;
+    const user = d.discord_user || {};
 
-/* STATUS DOT */
-.status-dot{position:absolute;right:8px;bottom:8px;width:16px;height:16px;border-radius:50%;border:3px solid var(--card);box-shadow:0 10px 26px rgba(0,0,0,0.6)}
-.status-dot.status-online{background:var(--success);animation:statusPulse 2s infinite}
-.status-dot.status-idle{background:var(--idle);animation:statusPulse 2s infinite}
-.status-dot.status-dnd{background:var(--danger);animation:statusPulse 2s infinite}
-.status-dot.status-offline{background:var(--offline)}
-@keyframes statusPulse{0%{box-shadow:0 0 0 0 rgba(79,124,255,0.08)}70%{box-shadow:0 0 0 12px rgba(79,124,255,0)}100%{box-shadow:0 0 0 0 rgba(79,124,255,0)}}
+    setText("username", user.global_name || user.username || "Unknown");
+    setImg("avatar", buildAvatar(user));
 
-/* META / TOP ROW */
-.profile-meta{flex:1}
-.top-row{display:flex;align-items:center;gap:10px}
-.username{font-size:20px;margin:6px 0 4px 0}
-.badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
-.badge-icon{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:rgba(255,255,255,0.02);transform:scale(.6);opacity:0;transition:transform .28s cubic-bezier(.2,.85,.25,1),opacity .28s}
-.badge-icon.show{transform:scale(1);opacity:1}
-.badge-icon svg{width:18px;height:18px;display:block;fill:#cfe6ff}
+    const banner = buildBanner(user);
+    if (banner) { show("bannerWrap"); setImg("bannerImg", banner); } else hide("bannerWrap");
 
-/* status lines */
-.status-box{display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-top:4px}
-.status-text{color:var(--muted);font-weight:700}
-.last-seen{color:var(--muted);font-size:13px}
+    renderBadges(user);
 
-/* utilities */
-.hidden{display:none!important}
-.fade-out{opacity:0;transform:translateY(-6px);transition:opacity .36s,transform .36s}
+    const raw = (d.discord_status || "offline").toLowerCase();
+    const status = raw === "invisible" ? "offline" : raw;
+    if (status !== "offline") lastOnlineTimestamp = Date.now();
 
-/* buttons */
-.profile-buttons{display:flex;gap:10px;justify-content:flex-start;margin-top:8px}
-.btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--accent);color:white;text-decoration:none;font-weight:600;box-shadow:0 8px 24px rgba(79,124,255,0.08);transition:transform .18s}
-.btn.contact{background:#10b981}
-.btn.view-bot{background:#4f7cff}
-.btn:hover{transform:translateY(-4px)}
+    const labelMap = { online: "Online", idle: "Away", dnd: "Do not disturb", offline: "Offline" };
+    await setTextFade("statusText", labelMap[status] ?? status);
 
-/* SPOTIFY */
-.spotify-card{display:flex;gap:12px;align-items:center;margin-top:12px;padding:10px;border-radius:10px}
-.spotify-art{width:72px;height:72px;border-radius:10px;object-fit:cover;box-shadow:0 10px 30px rgba(0,0,0,0.45)}
-.spotify-info{flex:1;min-width:0}
-.song{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.artist{color:var(--muted);font-size:13px}
-.progress-container{width:100%;height:8px;background:rgba(255,255,255,0.05);border-radius:999px;overflow:hidden;flex-shrink:0;margin-top:10px}
-.progress-fill{height:100%;width:0%;min-width:var(--spotify-min);border-radius:inherit;transition:width .6s linear, background .4s ease}
-.progress-time{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:8px}
+    handleLastSeenTransition(status);
 
-/* PROJECTS */
-.project-card{display:grid;grid-template-columns:160px 1fr;gap:16px;align-items:center;padding:12px;border-radius:12px;margin-top:12px}
-.project-image-wrap{width:160px;height:110px;overflow:hidden;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent)}
-.project-image{width:100%;height:100%;object-fit:cover}
-.project-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:700;min-height:110px}
-.project-title{margin:0;font-size:16px}
-.project-desc{margin:8px 0 0;color:var(--muted)}
+    if ($("contactBtn") && user.id) $("contactBtn").href = `https://discord.com/users/${user.id}`;
 
-/* responsive tweaks */
-@media (max-width:900px){
-  .project-card{grid-template-columns:1fr}
-  .project-image-wrap{width:100%;height:200px}
-  .profile-inner{flex-direction:row;gap:12px}
-  .skills img{
-    width:36px;
-    height:36px;
-    padding:3px;
+    const spotify = d.spotify || (Array.isArray(d.activities) ? d.activities.find(a => a.name === "Spotify") : null);
+    await renderSpotify(spotify);
+
+    lastStatus = status;
+  } catch (e) {
+    handleOfflineFallback();
   }
 }
 
-/* very small */
-@media (max-width:420px){
-  .intro{font-size:26px}
-  .skills img{width:32px;height:32px;padding:2px}
+function handleOfflineFallback(){
+  setText("username", "Offline");
+  setText("statusText", "Offline");
+  hide("spotify");
 }
+
+/* Fetch with timeout */
+function fetchWithTimeout(url, ms=8000){
+  return new Promise((resolve, reject) => {
+    const controller = new AbortController();
+    const timer = setTimeout(()=>{ controller.abort(); reject(new Error("fetch timeout")); }, ms);
+    fetch(url, { signal: controller.signal, cache: "no-store" })
+      .then(r => r.json())
+      .then(json => { clearTimeout(timer); resolve(json); })
+      .catch(err => { clearTimeout(timer); reject(err); });
+  });
+}
+
+/* DOM helpers */
+function setText(id, t){ const el=$(id); if(el) el.textContent = t; }
+function setImg(id, src){ const el=$(id); if(el && src) el.src = src; }
+function show(id){ const el=$(id); if(el) el.classList.remove("hidden"); }
+function hide(id){ const el=$(id); if(el) el.classList.add("hidden"); }
+
+function setTextFade(id, text){
+  const el = $(id);
+  if (!el) return Promise.resolve();
+  el._fadeToken = (el._fadeToken || 0) + 1;
+  const token = el._fadeToken;
+  if (el.textContent === text) { el.classList.remove("fade-out"); return Promise.resolve(); }
+  return new Promise(resolve => {
+    el.classList.add("fade-out");
+    setTimeout(()=> {
+      if (el._fadeToken !== token) return resolve();
+      el.textContent = text;
+      el.classList.remove("fade-out");
+      setTimeout(()=>{ if (el._fadeToken !== token) return resolve(); resolve(); }, 380);
+    }, 220);
+  });
+}
+
+/* last seen handling */
+function handleLastSeenTransition(status){
+  const lastSeenEl = $("lastSeen");
+  function startOfflineIntervalNow(){
+    stopLastSeenInterval();
+    if (!lastOnlineTimestamp) setText("lastSeen", "Last seen unknown");
+    else setText("lastSeen", `Last seen ${msToHumanShort(Date.now()-lastOnlineTimestamp)} ago`);
+    lastSeenInterval = setInterval(()=> {
+      if (!lastOnlineTimestamp) return;
+      setText("lastSeen", `Last seen ${msToHumanShort(Date.now()-lastOnlineTimestamp)} ago`);
+    }, 1000);
+  }
+  function stopLastSeenInterval(){
+    if (lastSeenInterval) { clearInterval(lastSeenInterval); lastSeenInterval = null; }
+  }
+  function hideLastSeenInstant(){
+    if (!lastSeenEl) return;
+    lastSeenEl.classList.add("fade-out");
+    setTimeout(()=>{ if (!lastSeenEl) return; lastSeenEl.classList.add("hidden"); }, 380);
+  }
+
+  // Only trigger transitions when status actually changes to avoid reappearing
+  if (status !== lastStatus) {
+    if (status === "online") {
+      stopLastSeenInterval();
+      if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
+      setTextFade("lastSeen","Active now").then(()=>{ if (lastSeenHideTimer) clearTimeout(lastSeenHideTimer); lastSeenHideTimer=setTimeout(()=>{ hideLastSeenInstant(); lastSeenHideTimer=null; },1500); });
+
+    } else if (status === "idle") {
+      stopLastSeenInterval();
+      if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
+      setTextFade("lastSeen","Away now").then(()=>{ if (lastSeenHideTimer) clearTimeout(lastSeenHideTimer); lastSeenHideTimer=setTimeout(()=>{ hideLastSeenInstant(); lastSeenHideTimer=null; },1500); });
+
+    } else if (status === "dnd") {
+      stopLastSeenInterval();
+      if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
+      setTextFade("lastSeen","Do not disturb").then(()=>{ if (lastSeenHideTimer) clearTimeout(lastSeenHideTimer); lastSeenHideTimer=setTimeout(()=>{ hideLastSeenInstant(); lastSeenHideTimer=null; },1500); });
+
+    } else if (status === "offline") {
+      if (lastSeenEl) { lastSeenEl.classList.remove("hidden"); lastSeenEl.classList.remove("fade-out"); }
+      startOfflineIntervalNow();
+    }
+  } else {
+    // If status unchanged:
+    if (status === "offline") {
+      if (!lastSeenInterval) startOfflineIntervalNow();
+    } else {
+      // if still online/idle/dnd and lastSeen is visible, hide it (so it doesn't persist)
+      if (lastSeenEl && !lastSeenEl.classList.contains("hidden")) hideLastSeenInstant();
+    }
+  }
+}
+
+/* avatar/banner/badges */
+function buildAvatar(user){
+  if (!user) return "";
+  if (!user.avatar) return `https://cdn.discordapp.com/embed/avatars/${Number(user.id||0)%5}.png`;
+  const ext = user.avatar.startsWith("a_") ? "gif" : "png";
+  return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=512`;
+}
+function buildBanner(user){
+  if (!user) return "";
+  if (!user.banner) return "";
+  const ext = user.banner.startsWith("a_") ? "gif" : "png";
+  return `https://cdn.discordapp.com/banners/${user.id}/${user.banner}.${ext}?size=1024`;
+}
+function badgeDefs(){
+  return [
+    {bit:1, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 15 9l7 .6-5 4 1 7L12 17 6.9 18 8 11l-5-4 7-.6L12 2z"/></svg>`},
+    {bit:2, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l2.9 6 6.6.6-4.8 3.9 1.2 6.5L12 17l-7.9 2 1.2-6.5L.5 8.6l6.6-.6L12 2z"/></svg>`},
+    {bit:4, svg:`<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l9 4-9 4-9-4 9-4zm0 12l9 4-9 4-9-4 9-4z"/></svg>`}
+  ];
+}
+function renderBadges(user){
+  const container = $("badges");
+  if (!container) return;
+  container.innerHTML = "";
+  const flags = (user && (user.public_flags ?? user.flags)) ?? 0;
+  const defs = badgeDefs();
+  const found = defs.filter(d => (Number(flags) & d.bit) === d.bit);
+  if (!found.length) { container.style.display = "none"; return; }
+  container.style.display = "flex";
+  found.forEach((b,i)=> {
+    const s = document.createElement("span");
+    s.className = "badge-icon";
+    s.innerHTML = b.svg;
+    container.appendChild(s);
+    setTimeout(()=>s.classList.add("show"), i*90);
+  });
+}
+
+/* spotify */
+async function renderSpotify(spotify){
+  if (spotifyTicker) { clearInterval(spotifyTicker); spotifyTicker=null; }
+
+  const spBox = $("spotify");
+  const albumArt = $("albumArt");
+  const songEl = $("song");
+  const artistEl = $("artist");
+  const progressFill = $("progressFill");
+  const timeCur = $("timeCurrent");
+  const timeTot = $("timeTotal");
+
+  if (!spotify) {
+    if (spBox) spBox.classList.add("hidden");
+    if (progressFill) { progressFill.style.width = "0%"; progressFill.style.background = ""; }
+    if (timeCur) timeCur.textContent = "0:00";
+    if (timeTot) timeTot.textContent = "0:00";
+    return;
+  }
+
+  const trackId = spotify.track_id ?? spotify.sync_id ?? spotify.party?.id ?? spotify.id ?? null;
+  const song = spotify.song ?? spotify.details ?? "";
+  const artist = spotify.artist ?? spotify.state ?? "";
+  const start = spotify.timestamps?.start;
+  const end = spotify.timestamps?.end;
+  const albumArtUrl = spotify.album_art_url ?? (spotify.assets?.large_image ? `https://i.scdn.co/image/${spotify.assets.large_image.replace("spotify:","")}` : "") || "";
+
+  if (spBox) spBox.classList.remove("hidden");
+  if (songEl) songEl.textContent = song || "";
+  if (artistEl) artistEl.textContent = artist || "";
+
+  if (albumArt && albumArtUrl) albumArt.src = `${albumArtUrl}${albumArtUrl.includes('?') ? '&' : '?'}_=${Date.now()}`;
+  else if (albumArt) albumArt.src = "";
+
+  (async () => {
+    if (!progressFill) return;
+    const col = await sampleColor(albumArtUrl);
+    if (col) progressFill.style.background = `linear-gradient(90deg, ${col}, rgba(255,255,255,0.18))`;
+    else progressFill.style.background = `linear-gradient(90deg,#1db954,#6be38b)`;
+  })();
+
+  if (start && end && end > start && progressFill) {
+    const total = end - start;
+    const MIN = 8;
+    const tick = () => {
+      const now = Date.now();
+      let raw = now - start; if (raw < 0) raw = 0;
+      let elapsed = (total > 0) ? (raw % total) : raw;
+      if (elapsed < 0) elapsed = 0;
+      const pct = (elapsed / total) * 100;
+      const visible = Math.max(pct, MIN);
+      progressFill.style.width = `${visible}%`;
+      if (timeCur) timeCur.textContent = msToMMSS(elapsed);
+      if (timeTot) timeTot.textContent = msToMMSS(total);
+    };
+    tick();
+    spotifyTicker = setInterval(tick, 1000);
+  } else {
+    if (progressFill) progressFill.style.width = "20%";
+    if (timeCur) timeCur.textContent = "0:00";
+    if (timeTot) timeTot.textContent = "—";
+  }
+}
+function hideSpotify(){ const sp=$("spotify"); if(sp) sp.classList.add("hidden"); }
+
+/* color sample */
+async function sampleColor(url){
+  if(!url) return null;
+  return new Promise(resolve=>{
+    try{
+      const img=new Image(); img.crossOrigin="Anonymous"; img.src=url;
+      img.onload=()=>{
+        try{
+          const W=48,H=48; const canvas=document.createElement("canvas"); canvas.width=W; canvas.height=H;
+          const ctx=canvas.getContext("2d"); ctx.drawImage(img,0,0,W,H);
+          const data=ctx.getImageData(0,0,W,H).data;
+          let r=0,g=0,b=0,c=0;
+          for(let y=8;y<40;y++){ for(let x=8;x<40;x++){ const i=(y*W+x)*4; const a=data[i+3]; if(!a) continue; r+=data[i]; g+=data[i+1]; b+=data[i+2]; c++; } }
+          if(!c) return resolve(null);
+          resolve(`rgb(${Math.round(r/c)}, ${Math.round(g/c)}, ${Math.round(b/c)})`);
+        }catch(e){ resolve(null); }
+      };
+      img.onerror=()=>resolve(null);
+    }catch(e){ resolve(null); }
+  });
+}
+
+/* utils */
+function msToMMSS(ms){ const s=Math.floor(ms/1000); return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`; }
+function msToHumanShort(ms){ const s=Math.floor(ms/1000); if(s<60) return `${s}s`; const m=Math.floor(s/60); if(m<60) return `${m}m`; const h=Math.floor(m/60); if(h<24) return `${h}h`; const d=Math.floor(h/24); return `${d}d`; }
